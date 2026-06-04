@@ -9,8 +9,8 @@ const InstallPrompt = () => {
     const handler = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      // Auto-prompt disabled to prevent UI interruptions
-      // setTimeout(() => setIsVisible(true), 5000);
+      // Automatically show install prompt after a short delay
+      setTimeout(() => setIsVisible(true), 3000);
     };
 
     window.addEventListener('beforeinstallprompt', handler as any);
