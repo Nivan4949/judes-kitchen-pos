@@ -1,0 +1,50 @@
+{
+  "name": "pos-billing-enterprise",
+  "version": "1.0.0",
+  "description": "Enterprise-grade Hybrid PWA POS",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "build": "npx prisma generate --schema prisma/schema.prisma && cd frontend && npm run build -- --outDir ../dist",
+    "start": "node api/index.js",
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "postinstall": "npx prisma generate --schema prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "autoprefixer": "^10.4.20",
+    "axios": "^1.7.9",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.12.3",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.473.0",
+    "morgan": "^1.10.1",
+    "pdfkit": "^0.18.0",
+    "postcss": "^8.4.49",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.13.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^3.4.17",
+    "zustand": "^5.0.3",
+    "prisma": "^6.19.3",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
+    "idb": "^8.0.3",
+    "nodemon": "^3.1.14",
+    "vite-plugin-pwa": "^0.19.8"
+  }
+}
