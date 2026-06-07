@@ -58,7 +58,13 @@ app.use('/api/restaurant-settings', require('./api/settingsRoutes'));
 
 // Health Checks
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'POS Billing System API is running on Vercel' });
+  const dbUrl = process.env.DATABASE_URL || '';
+  const maskedDbUrl = dbUrl.replace(/:([^:@]+)@/, ':****@');
+  res.json({ 
+    status: 'ok', 
+    message: 'POS Billing System API is running on Vercel',
+    dbUrl: maskedDbUrl
+  });
 });
 
 app.get('/api/health', (req, res) => {
