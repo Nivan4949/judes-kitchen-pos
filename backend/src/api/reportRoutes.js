@@ -49,16 +49,60 @@ const getDateRange = (filter, startDate, endDate, timezoneOffset = 0) => {
 // 0. Dashboard Summary for Admin
 router.get('/summary', async (req, res) => {
   try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Today's Sales
+    const todaySalesData = await prisma.order.aggregate({
+      where: {
+        createdAt: { gte: todayStart },
+        status: { not: 'CANCELLED' }
+      },
+      _sum: { roundedTotal: true }
+    });
+    const todaySales = Number(todaySalesData._sum?.roundedTotal || 0);
+
+    // Running Orders Count (unpaid orders)
+    const runningOrdersCount = await prisma.order.count({
+      where: {
+        createdAt: { gte: todayStart },
+        status: 'PENDING'
+      }
+    });
+
+    // Occupied Tables Count
+    const occupiedTablesCount = await prisma.table.count({
+      where: {
+        status: { in: ['OCCUPIED', 'BILLING'] }
+      }
+    });
+
+    // Pending KOTs Count
+    const pendingKotsCount = await prisma.kOT.count({
+      where: {
+        status: { in: ['PENDING', 'PREPARING'] }
+      }
+    });
+
+    // Total Revenue (all time)
     const totalRevenue = await prisma.order.aggregate({
       _sum: { grandTotal: true }
     });
+
+    // Total Orders (all time)
     const totalOrders = await prisma.order.count();
+
+    // Low stock
     const lowStockAlerts = await prisma.product.count({
       where: { stockQuantity: { lt: 10 } }
     });
+
+    // Terminals / Active users
     const activeTerminals = await prisma.device.count({
       where: { authorized: true }
     });
+
+    // Recent orders
     const recentOrders = await prisma.order.findMany({
       take: 10,
       orderBy: { createdAt: 'desc' },
@@ -68,7 +112,41 @@ router.get('/summary', async (req, res) => {
       }
     });
 
-    // Top Selling Categories for Distribution
+    // Top Selling Items today/all-time
+    const orderItems = await prisma.orderItem.findMany({
+      take: 100,
+      include: { product: true }
+    });
+
+    const itemSalesMap = {};
+    orderItems.forEach(item => {
+      const name = item.product?.name || item.name || 'Unknown';
+      itemSalesMap[name] = (itemSalesMap[name] || 0) + item.quantity;
+    });
+
+    const topSellingItems = Object.entries(itemSalesMap)
+      .map(([name, qty]) => ({ name, qty: Number(qty) }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+
+    // Payment Summary Today
+    const todayPayments = await prisma.payment.findMany({
+      where: {
+        createdAt: { gte: todayStart }
+      }
+    });
+
+    const paymentSummary = { CASH: 0, UPI: 0, CARD: 0 };
+    todayPayments.forEach(p => {
+      const method = p.method?.toUpperCase() || 'CASH';
+      if (paymentSummary[method] !== undefined) {
+        paymentSummary[method] += p.amount;
+      } else {
+        paymentSummary[method] = (paymentSummary[method] || 0) + p.amount;
+      }
+    });
+
+    // Distribution (Category Sales)
     const categorySales = await prisma.orderItem.findMany({
       include: { product: { include: { category: true } } }
     });
@@ -85,6 +163,12 @@ router.get('/summary', async (req, res) => {
       .slice(0, 5);
 
     res.json({
+      todaySales,
+      runningOrdersCount,
+      occupiedTablesCount,
+      pendingKotsCount,
+      topSellingItems,
+      paymentSummary,
       totalRevenue: Number(totalRevenue._sum?.grandTotal || 0),
       totalOrders,
       lowStockAlerts,
@@ -107,6 +191,12 @@ router.get('/summary', async (req, res) => {
       `;
       
       res.json({
+        todaySales: 0,
+        runningOrdersCount: 0,
+        occupiedTablesCount: 0,
+        pendingKotsCount: 0,
+        topSellingItems: [],
+        paymentSummary: { CASH: 0, UPI: 0, CARD: 0 },
         totalRevenue: Number(rawRev[0]?.total || 0),
         totalOrders: Number(rawCount[0]?.count || 0),
         lowStockAlerts: Number(rawLow[0]?.count || 0),

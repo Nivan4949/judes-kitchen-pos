@@ -240,6 +240,7 @@ const usePOSStore = create(
             cartLineId: item.id,
             id: item.productId,
             quantity: item.quantity,
+            originalQuantity: item.quantity,
             sellingPrice: item.price,
             modifiersPrice,
             selectedVariant: item.variant ? { name: item.variant, price: item.price } : null,

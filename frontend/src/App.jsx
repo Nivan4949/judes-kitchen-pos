@@ -28,6 +28,7 @@ import TableManagement from './pages/Tables/TableManagement';
 import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
 import ShiftClosing from './pages/Shifts/ShiftClosing';
 import RecipeManagement from './pages/Inventory/RecipeManagement';
+import QRMenu from './pages/QRMenu/QRMenu';
 
 function App() {
   const token = useAuthStore((state) => state.token);
@@ -53,6 +54,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={!token ? <LoginPage /> : <Navigate to="/" replace />} />
+          <Route path="/qr-menu" element={<QRMenu />} />
           
           {/* Protected Routes */}
           <Route element={<PrivateRoute />}>

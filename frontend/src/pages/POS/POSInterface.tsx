@@ -1,6 +1,7 @@
 import React, { useState, useEffect, ChangeEvent, useRef } from 'react';
 import { Search, ShoppingCart, User, CreditCard, Trash2, Plus, Minus, Scan, Maximize, Minimize, Camera, Wifi, WifiOff, X, LayoutGrid, Printer, CheckCircle, Smartphone, Battery, ChevronRight, Clock, Star, Users, HandCoins, Bluetooth, BluetoothOff, RefreshCw } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { io } from 'socket.io-client';
 import api from '../../api/api';
 import usePOSStore from '../../store/posStore';
 import useAuthStore from '../../store/authStore';
@@ -44,7 +45,7 @@ const POSInterface: React.FC = () => {
   const deleteHeldOrder = usePOSStore(state => state.deleteHeldOrder);
   const loadRunningOrder = usePOSStore(state => state.loadRunningOrder);
 
-  const { tables, fetchTables, settings, fetchSettings, sections, fetchSections } = useRestaurantStore();
+  const { tables, fetchTables, settings, fetchSettings, sections, fetchSections, activeShift, checkActiveShift } = useRestaurantStore();
 
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -71,6 +72,77 @@ const POSInterface: React.FC = () => {
   const [customizationQty, setCustomizationQty] = useState(1);
   const [itemNotesInput, setItemNotesInput] = useState('');
   const [waiters, setWaiters] = useState<any[]>([]);
+  const [pendingQrRequests, setPendingQrRequests] = useState<any[]>([]);
+  const [isQrRequestsModalOpen, setIsQrRequestsModalOpen] = useState(false);
+
+  const fetchPendingQrRequests = async () => {
+    try {
+      const response = await api.get('/orders/pending-approvals');
+      setPendingQrRequests(response.data);
+    } catch (error) {
+      console.error('Failed to fetch QR requests:', error);
+    }
+  };
+
+  const handleApproveQrRequest = async (id: string) => {
+    try {
+      const response = await api.post(`/orders/${id}/approve`);
+      alert('Order approved and KOT sent to kitchen!');
+      setPendingQrRequests(prev => prev.filter(r => r.id !== id));
+      fetchTables();
+    } catch (error: any) {
+      console.error('Failed to approve QR request:', error);
+      alert(error.response?.data?.error || 'Failed to approve request');
+    }
+  };
+
+  const handleRejectQrRequest = async (id: string) => {
+    if (!window.confirm('Are you sure you want to reject this order request?')) return;
+    try {
+      await api.post(`/orders/${id}/reject`);
+      alert('Order request rejected and removed.');
+      setPendingQrRequests(prev => prev.filter(r => r.id !== id));
+    } catch (error: any) {
+      console.error('Failed to reject QR request:', error);
+      alert(error.response?.data?.error || 'Failed to reject request');
+    }
+  };
+
+  const [cancellationReasons, setCancellationReasons] = useState<{[key: string]: string}>({});
+
+  const handleRemoveFromCart = (item: CartItem) => {
+    if (activeOrderId && item.originalQuantity && item.originalQuantity > 0) {
+      const reason = prompt(`Enter reason for cancelling/removing '${item.name}':`);
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('Cancellation reason is required.');
+        return;
+      }
+      setCancellationReasons(prev => ({
+        ...prev,
+        [item.cartLineId || item.id]: reason
+      }));
+    }
+    removeFromCart(item.cartLineId || item.id);
+  };
+
+  const handleUpdateQuantity = (item: CartItem, newQty: number) => {
+    if (activeOrderId && item.originalQuantity && newQty < item.quantity) {
+      const reducedQty = item.quantity - newQty;
+      const reason = prompt(`Enter reason for reducing quantity of '${item.name}' by ${reducedQty}:`);
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('Reason is required for quantity reduction.');
+        return;
+      }
+      setCancellationReasons(prev => ({
+        ...prev,
+        [item.cartLineId || item.id]: reason
+      }));
+    }
+    updateQuantity(item.cartLineId || item.id, newQty);
+  };
+
 
   const isOnline = useNetworkStatus();
   const { isConnected, isConnecting, disconnect, connect, print } = useBluetoothPrinter();
@@ -199,7 +271,31 @@ const POSInterface: React.FC = () => {
     fetchSections();
     fetchWaiters();
     fetchSettings();
+    fetchPendingQrRequests();
+    checkActiveShift();
     
+    // Connect Real-Time socket notifications
+    const socketUrl = `${window.location.protocol}//${window.location.host}`;
+    const socket = io(socketUrl, {
+      transports: ['polling', 'websocket'],
+      autoConnect: true
+    });
+
+    socket.on('QR_ORDER_REQUESTED', (order: any) => {
+      setPendingQrRequests(prev => {
+        if (prev.some(r => r.id === order.id)) return prev;
+        return [order, ...prev];
+      });
+      try {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav');
+        audio.play().catch(() => {});
+      } catch (e) {}
+    });
+
+    socket.on('QR_ORDER_PROCESSED', ({ id }: { id: string }) => {
+      setPendingQrRequests(prev => prev.filter(r => r.id !== id));
+    });
+
     // Initialize last invoice number from DB once
     const initInvoiceNo = async () => {
       const orders = await offlineDB.getAll('orders');
@@ -214,6 +310,10 @@ const POSInterface: React.FC = () => {
       }
     };
     initInvoiceNo();
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Trigger auto-charge updates based on order mode and subtotal
@@ -325,6 +425,11 @@ const POSInterface: React.FC = () => {
   const handlePaymentComplete = async (method: string, amount: string, orderMode: string = 'Walk-in') => {
     if (cart.length === 0) return;
 
+    if (!activeShift) {
+      alert('Please open your cashier shift from the Shift Closing screen before completing a bill.');
+      return;
+    }
+
     const totals = getTotals();
     const { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
 
@@ -376,6 +481,7 @@ const POSInterface: React.FC = () => {
       customer: customer,
       userName: user?.name || 'Staff',
       creatorId: user?.id || null,
+      shiftId: activeShift?.id || null,
       createdAt: new Date().toISOString(),
       waiterName: waiterName || null,
       tableName: tableName || null,
@@ -533,6 +639,7 @@ const POSInterface: React.FC = () => {
         serviceCharge: totals.serviceCharge,
         parcelCharge: totals.parcelCharge,
         deliveryCharge: totals.deliveryCharge,
+        shiftId: activeShift?.id || null,
         status: 'PENDING'
       };
 
@@ -556,8 +663,10 @@ const POSInterface: React.FC = () => {
         tableName,
         waiterName,
         orderType,
-        items: kotItems
+        items: kotItems,
+        cancellationReasons
       });
+      setCancellationReasons({});
 
       console.log('KOT response:', kotResponse.data);
       const { kot, cancelKot } = kotResponse.data;
@@ -634,6 +743,23 @@ const POSInterface: React.FC = () => {
           </button>
 
           <div className="h-6 w-px bg-white/10 hidden sm:block mx-1"></div>
+
+          {/* QR Requests Badge Button */}
+          <button
+            onClick={() => {
+              fetchPendingQrRequests();
+              setIsQrRequestsModalOpen(true);
+            }}
+            className="p-2 hover:bg-white/10 rounded-xl transition-all flex items-center justify-center text-white/70 hover:text-white relative"
+            title="Pending QR Requests"
+          >
+            <Smartphone size={18} className={pendingQrRequests.length > 0 ? "text-orange-400 animate-bounce" : ""} />
+            {pendingQrRequests.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                {pendingQrRequests.length}
+              </span>
+            )}
+          </button>
 
           <button 
             onClick={() => window.location.reload()}
@@ -845,19 +971,28 @@ const POSInterface: React.FC = () => {
             {cart.length > 0 ? (
               <div className="divide-y divide-slate-50">
                 {cart.map((item: CartItem) => (
-                  <div key={item.id} className="p-3 md:p-4 hover:bg-slate-50/50 transition-colors flex items-center gap-3 md:gap-4 animate-in fade-in slide-in-from-right-4 group">
+                  <div key={item.cartLineId || item.id} className="p-3 md:p-4 hover:bg-slate-50/50 transition-colors flex items-center gap-3 md:gap-4 animate-in fade-in slide-in-from-right-4 group">
                     {/* Individual Delete Button on Left */}
                     <button 
-                      onClick={() => removeFromCart(item.id)}
+                      onClick={() => handleRemoveFromCart(item)}
                       className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shrink-0"
                       title="Remove item"
                     >
                       <Trash2 size={18} />
                     </button>
-
+ 
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-slate-800 text-sm md:text-base truncate">{item.name}</div>
-                      <div className="text-xs md:text-sm text-slate-500 flex items-center gap-1.5">
+                      <div className="font-bold text-slate-800 text-sm md:text-base truncate">
+                        {item.name}
+                        {item.selectedVariant && <span className="text-[10px] text-orange-500 ml-1.5 uppercase font-black">({item.selectedVariant.name})</span>}
+                      </div>
+                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                          + {item.selectedModifiers.map((m: any) => m.name).join(', ')}
+                        </div>
+                      )}
+                      {item.notes && <div className="text-[10px] text-orange-600 italic mt-0.5">* "{item.notes}"</div>}
+                      <div className="text-xs md:text-sm text-slate-500 flex items-center gap-1.5 mt-0.5">
                          {item.unit?.toUpperCase() === 'LOOSE' ? (
                            <div className="flex items-center gap-1">
                              <span>₹</span>
@@ -870,18 +1005,18 @@ const POSInterface: React.FC = () => {
                              />
                            </div>
                          ) : (
-                           <span>₹{item.sellingPrice.toFixed(2)}</span>
+                           <span>₹{(item.sellingPrice + (item.modifiersPrice || 0)).toFixed(2)}</span>
                          )}
                          <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                          <span className="truncate">{item.category?.name || 'General'}</span>
                       </div>
                     </div>
-
+ 
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex items-center bg-slate-100 rounded-lg p-0.5 md:p-1">
                         <button 
                           onClick={() => {
-                            updateQuantity(item.id, Math.max(1, item.quantity - 1));
+                            handleUpdateQuantity(item, Math.max(1, item.quantity - 1));
                           }}
                           className="w-6 md:w-8 h-6 md:h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm text-slate-500"
                         >
@@ -895,30 +1030,30 @@ const POSInterface: React.FC = () => {
                           onChange={(e) => {
                             let valStr = e.target.value;
                             if (valStr === '') {
-                              updateQuantity(item.id, 0);
+                              handleUpdateQuantity(item, 0);
                               return;
                             }
                             let val = parseFloat(valStr) || 0;
                             if (!isFractionalUnit(item.unit)) val = Math.round(val);
-                            updateQuantity(item.id, Math.max(0, val));
+                            handleUpdateQuantity(item, Math.max(0, val));
                           }}
                           onBlur={() => {
                             if (item.quantity <= 0) {
-                              updateQuantity(item.id, isFractionalUnit(item.unit) ? 0.001 : 1);
+                              handleUpdateQuantity(item, isFractionalUnit(item.unit) ? 0.001 : 1);
                             }
                           }}
                           className="w-12 md:w-16 bg-transparent border-none text-center font-bold text-base text-slate-700 focus:ring-0 p-0"
                         />
                         <button 
                           onClick={() => {
-                            updateQuantity(item.id, item.quantity + 1);
+                            handleUpdateQuantity(item, item.quantity + 1);
                           }}
                           className="w-6 md:w-8 h-6 md:h-8 flex items-center justify-center rounded-md hover:bg-white hover:shadow-sm text-slate-600"
                         >
                           <Plus size={12} strokeWidth={3} />
                         </button>
                       </div>
-                      <div className="font-bold text-slate-900 text-xs md:text-base">₹{(item.sellingPrice * item.quantity).toFixed(2)}</div>
+                      <div className="font-bold text-slate-900 text-xs md:text-base">₹{((item.sellingPrice + (item.modifiersPrice || 0)) * item.quantity).toFixed(2)}</div>
                     </div>
                   </div>
                 ))}
@@ -1323,6 +1458,101 @@ const POSInterface: React.FC = () => {
               {heldOrders.length === 0 && (
                 <div className="text-center py-10 text-slate-400 font-bold italic">
                   No orders on hold.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Order Requests Modal */}
+      {isQrRequestsModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsQrRequestsModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1.5"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-black text-slate-900 mb-1">QR Menu Order Requests</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mb-6">Verify and approve customer self-orders</p>
+
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+              {pendingQrRequests.map((req: any) => (
+                <div 
+                  key={req.id}
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 text-slate-700"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-black uppercase tracking-wider">
+                          {req.orderType}
+                        </span>
+                        {req.tableName && (
+                          <span className="font-black text-slate-800 text-sm">
+                            Table {req.tableName}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium mt-1">
+                        Cust: {req.customerName || 'QR Guest'} {req.customerPhone ? `(${req.customerPhone})` : ''}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-bold">
+                      {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+
+                  {/* Items list */}
+                  <div className="border-t border-slate-200/60 pt-2 space-y-1">
+                    {req.orderItems?.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-xs text-slate-700 font-medium">
+                        <span>
+                          {item.product?.name || item.name}
+                          {item.variant && <span className="text-[10px] text-orange-500 ml-1">({item.variant})</span>}
+                          {item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0 && (
+                            <span className="text-[10px] text-slate-400 block pl-3">
+                              + {item.modifiers.map((m: any) => m.name).join(', ')}
+                            </span>
+                          )}
+                          {item.notes && <span className="text-[10px] text-orange-600 block pl-3 italic">* "{item.notes}"</span>}
+                        </span>
+                        <span className="font-bold text-slate-900">x{item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {req.notes && (
+                    <p className="text-xs text-slate-500 bg-amber-50 border border-amber-100/50 p-2 rounded-xl italic">
+                      Note: "{req.notes}"
+                    </p>
+                  )}
+
+                  {/* Approval Actions */}
+                  <div className="flex gap-2 pt-2 border-t border-slate-200/60 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleRejectQrRequest(req.id)}
+                      className="px-4 py-2 bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider rounded-xl hover:bg-slate-200 transition-all"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApproveQrRequest(req.id)}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-orange-600/10 transition-all"
+                    >
+                      Approve & KOT
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {pendingQrRequests.length === 0 && (
+                <div className="text-center py-10 text-slate-400 font-bold italic">
+                  No pending QR requests.
                 </div>
               )}
             </div>

@@ -42,7 +42,7 @@ router.get('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER', 'KITCHEN']), asyn
 
 // Create KOT (Generates KOT for new or modified items)
 router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, res) => {
-  const { orderId, tableId, tableName, waiterName, orderType, items } = req.body;
+  const { orderId, tableId, tableName, waiterName, orderType, items, cancellationReasons } = req.body;
   // items: Array of { productId, name, quantity, notes, variant, modifiers }
 
   if (!items || items.length === 0) {
@@ -110,6 +110,8 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
             const [pId, variant] = key.split('-');
             const reqItem = items.find(i => i.productId === pId && (i.variant || '') === variant);
             
+            const reason = (cancellationReasons && cancellationReasons[key]) || 'ITEM CANCELLED';
+
             // If item still in cart but reduced:
             if (reqItem) {
               const diff = sentQty - reqItem.quantity;
@@ -118,7 +120,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
                   productId: pId,
                   name: reqItem.name,
                   quantity: diff,
-                  notes: 'QUANTITY REDUCED',
+                  notes: reason,
                   variant: variant || null
                 });
               }
@@ -128,7 +130,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
                 productId: pId,
                 name: 'Item Removed',
                 quantity: sentQty,
-                notes: 'ITEM CANCELLED',
+                notes: reason,
                 variant: variant || null
               });
             }

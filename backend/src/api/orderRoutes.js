@@ -823,4 +823,233 @@ router.delete('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   }
 });
 
+// Place customer order request from QR Menu (Public)
+router.post('/qr-request', async (req, res) => {
+  try {
+    const { 
+      orderItems, subtotal, discount = 0, taxTotal = 0, grandTotal = 0, 
+      roundedTotal = 0, orderType, tableName, tableId, notes, 
+      customerName, customerPhone
+    } = req.body;
+
+    if (!orderItems || orderItems.length === 0) {
+      return res.status(400).json({ error: 'Order must contain at least one item.' });
+    }
+
+    const uniqueInvoiceNo = `QR-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const order = await prisma.order.create({
+      data: {
+        invoiceNo: uniqueInvoiceNo,
+        subtotal,
+        discount,
+        taxTotal,
+        grandTotal,
+        roundedTotal,
+        amountPaid: 0,
+        balance: roundedTotal,
+        paymentMode: 'PENDING',
+        orderType: orderType || 'Dine-in',
+        status: 'PENDING_APPROVAL',
+        tableName: tableName || null,
+        tableId: tableId || null,
+        notes: notes || null,
+        customerName: customerName || 'QR Guest',
+        customerPhone: customerPhone || null,
+        orderItems: {
+          create: orderItems.map(item => ({
+            productId: item.productId || item.id,
+            quantity: item.quantity,
+            price: item.price || item.sellingPrice,
+            mrp: item.mrp || item.price || item.sellingPrice || 0,
+            taxAmount: item.taxAmount || 0,
+            total: item.total || (item.quantity * (item.price || item.sellingPrice)),
+            notes: item.notes || null,
+            variant: item.variant || null,
+            modifiers: item.modifiers || null
+          }))
+        }
+      },
+      include: {
+        orderItems: {
+          include: { product: true }
+        }
+      }
+    });
+
+    // Notify staff via Socket.io
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('QR_ORDER_REQUESTED', order);
+      }
+    } catch (err) {
+      console.error('Socket notification failed for QR request:', err);
+    }
+
+    res.json({ success: true, order });
+  } catch (error) {
+    console.error('QR Request Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fetch all pending QR approvals
+router.get('/pending-approvals', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { status: 'PENDING_APPROVAL' },
+      include: {
+        orderItems: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve order request
+router.post('/:id/approve', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find the pending order
+    const pendingOrder = await prisma.order.findUnique({
+      where: { id },
+      include: { orderItems: true }
+    });
+
+    if (!pendingOrder) {
+      return res.status(404).json({ error: 'Order request not found' });
+    }
+
+    if (pendingOrder.status !== 'PENDING_APPROVAL') {
+      return res.status(400).json({ error: 'Order is already approved or processed' });
+    }
+
+    // Generate a fresh sequential invoice number
+    let finalInvoiceNo;
+    const rawMax = await prisma.$queryRaw`
+      SELECT MAX(CAST("invoiceNo" AS INTEGER)) as "maxNum" 
+      FROM "Order" 
+      WHERE "invoiceNo" ~ '^[0-9]+$' AND "invoiceNo" NOT LIKE '9%'
+    `;
+    const maxNum = Number(rawMax[0]?.maxNum) || 99;
+    finalInvoiceNo = String(maxNum + 1);
+
+    // Update order status to PENDING (running order) and give it the safe sequential invoiceNo
+    const order = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id },
+        data: {
+          status: 'PENDING',
+          invoiceNo: finalInvoiceNo
+        },
+        include: {
+          orderItems: { include: { product: true } }
+        }
+      });
+
+      // If it's a Dine-in order, lock the table
+      if (updatedOrder.orderType === 'Dine-in' && updatedOrder.tableId) {
+        await tx.table.update({
+          where: { id: updatedOrder.tableId },
+          data: {
+            status: 'OCCUPIED',
+            currentOrderId: updatedOrder.id,
+            occupiedAt: new Date(),
+            runningOrderAmount: updatedOrder.roundedTotal
+          }
+        });
+      }
+
+      // Generate a KOT automatically for this order
+      const nextKotNumRaw = await tx.$queryRaw`
+        SELECT COUNT(*) as count FROM "KOT"
+      `;
+      const nextKotNum = Number(nextKotNumRaw[0]?.count || 0) + 1;
+      const kotNo = `KOT-${nextKotNum}`;
+
+      await tx.kOT.create({
+        data: {
+          kotNo,
+          orderId: updatedOrder.id,
+          tableId: updatedOrder.tableId || null,
+          tableName: updatedOrder.tableName || null,
+          waiterName: updatedOrder.waiterName || 'QR Order',
+          orderType: updatedOrder.orderType,
+          status: 'PENDING',
+          items: {
+            create: updatedOrder.orderItems.map(item => ({
+              productId: item.productId,
+              name: item.product?.name || item.name || 'Item',
+              quantity: item.quantity,
+              notes: item.notes || null,
+              variant: item.variant || null,
+              modifiers: item.modifiers || null
+            }))
+          }
+        }
+      });
+
+      return updatedOrder;
+    });
+
+    // Emit event to update KDS and POS screens
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('QR_ORDER_PROCESSED', { id });
+        io.emit('ORDER_CREATED', order);
+        io.emit('KOT_CREATED', { orderId: order.id });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+
+    res.json({ success: true, order });
+  } catch (error) {
+    console.error('Approve Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject order request
+router.post('/:id/reject', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const order = await prisma.order.findUnique({
+      where: { id }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order request not found' });
+    }
+
+    await prisma.orderItem.deleteMany({
+      where: { orderId: id }
+    });
+
+    await prisma.order.delete({
+      where: { id }
+    });
+
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('QR_ORDER_PROCESSED', { id });
+      }
+    } catch (err) {}
+
+    res.json({ success: true, message: 'Order request rejected' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

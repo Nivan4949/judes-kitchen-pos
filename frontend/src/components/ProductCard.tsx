@@ -21,7 +21,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) => {
           </span>
         )}
       </div>
-      <div className="font-semibold text-slate-700 truncate text-xs md:text-sm mb-0.5">{product.name}</div>
+      <div className="font-semibold text-slate-700 truncate text-xs md:text-sm mb-0.5 flex items-center gap-1.5">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${
+          product.foodType === 'NON-VEG' ? 'bg-red-500' : product.foodType === 'EGG' ? 'bg-yellow-500' : 'bg-emerald-500'
+        }`} title={product.foodType || 'VEG'} />
+        <span className="truncate">{product.name}</span>
+      </div>
       <div className="text-brand-primary font-bold text-sm md:text-lg">₹{product.sellingPrice.toFixed(2)}</div>
       <div className="text-[10px] text-slate-400 mt-0.5 flex justify-between items-end">
         <span className="truncate">Stock: {product.stockQuantity}</span>

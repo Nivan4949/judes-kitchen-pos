@@ -11,8 +11,31 @@ interface ProductModalProps {
 }
 
 const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave }) => {
-  const [formData, setFormData] = useState<Partial<Product>>(
-    product || {
+  const parseJsonField = (field: any) => {
+    if (!field) return [];
+    if (typeof field === 'string') {
+      try {
+        return JSON.parse(field);
+      } catch (e) {
+        return [];
+      }
+    }
+    return field;
+  };
+
+  const [formData, setFormData] = useState<Partial<Product>>(() => {
+    if (product) {
+      return {
+        ...product,
+        variants: parseJsonField(product.variants),
+        addons: parseJsonField(product.addons),
+        foodType: product.foodType || 'VEG',
+        availability: product.availability ?? true,
+        preparationTime: product.preparationTime ?? 15,
+        kitchenDept: product.kitchenDept || 'MAIN_KITCHEN'
+      };
+    }
+    return {
       name: '',
       barcode: '',
       purchasePrice: 0,
@@ -22,8 +45,50 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
       stockQuantity: 0,
       unit: 'pcs',
       image: '',
-    }
-  );
+      foodType: 'VEG',
+      availability: true,
+      variants: [],
+      addons: [],
+      preparationTime: 15,
+      kitchenDept: 'MAIN_KITCHEN'
+    };
+  });
+
+  const [newVariantName, setNewVariantName] = useState('');
+  const [newVariantPrice, setNewVariantPrice] = useState('');
+  const [newAddonName, setNewAddonName] = useState('');
+  const [newAddonPrice, setNewAddonPrice] = useState('');
+
+  const addVariant = () => {
+    if (!newVariantName || !newVariantPrice) return;
+    const currentVariants = [...(formData.variants as any[] || [])];
+    currentVariants.push({ name: newVariantName, price: parseFloat(newVariantPrice) || 0 });
+    setFormData({ ...formData, variants: currentVariants });
+    setNewVariantName('');
+    setNewVariantPrice('');
+  };
+
+  const removeVariant = (index: number) => {
+    const currentVariants = [...(formData.variants as any[] || [])];
+    currentVariants.splice(index, 1);
+    setFormData({ ...formData, variants: currentVariants });
+  };
+
+  const addAddon = () => {
+    if (!newAddonName || !newAddonPrice) return;
+    const currentAddons = [...(formData.addons as any[] || [])];
+    currentAddons.push({ name: newAddonName, price: parseFloat(newAddonPrice) || 0 });
+    setFormData({ ...formData, addons: currentAddons });
+    setNewAddonName('');
+    setNewAddonPrice('');
+  };
+
+  const removeAddon = (index: number) => {
+    const currentAddons = [...(formData.addons as any[] || [])];
+    currentAddons.splice(index, 1);
+    setFormData({ ...formData, addons: currentAddons });
+  };
+
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -90,7 +155,9 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
         mrp: Number(cleanData.mrp) || 0,
         gstRate: Number(cleanData.gstRate) || 0,
         stockQuantity: Number(cleanData.stockQuantity) || 0,
-        categoryId: cleanData.categoryId || null
+        categoryId: cleanData.categoryId || null,
+        preparationTime: Number(cleanData.preparationTime) || 15,
+        availability: cleanData.availability ?? true
       };
 
       if (product?.id) {
@@ -286,6 +353,165 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                 value={formData.stockQuantity}
                 onChange={(e) => setFormData({ ...formData, stockQuantity: parseFloat(e.target.value) || 0 })}
               />
+            </div>
+          </div>
+
+          {/* Restaurant Configuration Section */}
+          <div className="mt-8 pt-6 border-t border-slate-100 space-y-6">
+            <h3 className="text-sm font-black uppercase text-slate-800 tracking-wider">Restaurant Menu Settings</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 font-mono">Food Type</label>
+                <select
+                  className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-brand-500 font-bold text-slate-800 outline-none cursor-pointer text-sm"
+                  value={formData.foodType || 'VEG'}
+                  onChange={(e) => setFormData({ ...formData, foodType: e.target.value })}
+                >
+                  <option value="VEG">Vegetarian (VEG)</option>
+                  <option value="NON-VEG">Non-Vegetarian (NON-VEG)</option>
+                  <option value="EGG">Contains Egg (EGG)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 font-mono">Kitchen Dept</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-brand-500 font-bold text-slate-800 outline-none text-sm"
+                  placeholder="e.g. MAIN_KITCHEN"
+                  value={formData.kitchenDept || ''}
+                  onChange={(e) => setFormData({ ...formData, kitchenDept: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 font-mono">Prep Time (Mins)</label>
+                <input
+                  type="number"
+                  className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-brand-500 font-bold text-slate-800 outline-none text-sm"
+                  value={formData.preparationTime || 15}
+                  onChange={(e) => setFormData({ ...formData, preparationTime: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+
+              <div className="flex items-center pt-5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5 rounded text-brand-600 focus:ring-brand-500 border-slate-300"
+                    checked={formData.availability ?? true}
+                    onChange={(e) => setFormData({ ...formData, availability: e.target.checked })}
+                  />
+                  <span className="text-xs font-black uppercase text-slate-500 tracking-wider">Available for Order</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Portions & Pricing (Variants) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider mb-3">Portion Variants</h4>
+                
+                {/* Current list */}
+                <div className="space-y-2 mb-4 max-h-36 overflow-y-auto pr-1">
+                  {(formData.variants as any[] || []).map((v, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-200">
+                      <span className="text-xs font-bold text-slate-800">{v.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-brand-600">₹{v.price}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeVariant(idx)}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {(formData.variants as any[] || []).length === 0 && (
+                    <p className="text-[10px] text-slate-400 italic">No variants configured. Defaults to base price.</p>
+                  )}
+                </div>
+
+                {/* Add Form */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Variant (e.g. Half)"
+                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                    value={newVariantName}
+                    onChange={(e) => setNewVariantName(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Price (₹)"
+                    className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                    value={newVariantPrice}
+                    onChange={(e) => setNewVariantPrice(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={addVariant}
+                    className="p-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 text-xs font-black"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Add-ons & Modifiers */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider mb-3">Add-ons & Modifiers</h4>
+                
+                {/* Current list */}
+                <div className="space-y-2 mb-4 max-h-36 overflow-y-auto pr-1">
+                  {(formData.addons as any[] || []).map((addon, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-xl border border-slate-200">
+                      <span className="text-xs font-bold text-slate-800">{addon.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-brand-600">₹{addon.price}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeAddon(idx)}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {(formData.addons as any[] || []).length === 0 && (
+                    <p className="text-[10px] text-slate-400 italic">No add-ons or modifiers configured.</p>
+                  )}
+                </div>
+
+                {/* Add Form */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add-on (e.g. Cheese)"
+                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                    value={newAddonName}
+                    onChange={(e) => setNewAddonName(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Price (₹)"
+                    className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                    value={newAddonPrice}
+                    onChange={(e) => setNewAddonPrice(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={addAddon}
+                    className="p-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 text-xs font-black"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
