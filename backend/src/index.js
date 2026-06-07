@@ -20,6 +20,180 @@ const expenseCategoryRoutes = require('./api/expenseCategoryRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const prisma = require('./config/prisma');
+
+async function autoSeedDatabase() {
+  try {
+    console.log('Running auto-seeding database check...');
+    
+    // Ensure default settings exist
+    await prisma.restaurantSettings.upsert({
+      where: { id: 'settings' },
+      update: {},
+      create: {
+        id: 'settings',
+        name: "JUDE'S KITCHEN",
+        address: "Kodassery, Pandikkad (po), Malappuram, Kerala",
+        phone: "8606391315, 75608 57580",
+        gstin: "32AAAAA0000A1Z5",
+        currency: "INR",
+        gstRate: 5.0,
+        serviceChargeRate: 5.0,
+        parcelCharge: 10.0,
+        deliveryCharge: 30.0,
+        printerSize: "80mm"
+      }
+    });
+
+    // Ensure categories exist
+    const categories = ['Main Course', 'Pizza & Italian', 'Starters', 'Beverages'];
+    const catMap = {};
+    for (const catName of categories) {
+      const category = await prisma.category.upsert({
+        where: { name: catName },
+        update: {},
+        create: { name: catName }
+      });
+      catMap[catName] = category.id;
+    }
+
+    // Ensure our 4 custom menu items exist
+    const items = [
+      {
+        name: 'Beef sp',
+        price: 130,
+        categoryId: catMap['Main Course'],
+        foodType: 'NON-VEG',
+        barcode: 'DEMO-BEEF-SP',
+        kitchenDept: 'MAIN_KITCHEN',
+        preparationTime: 15
+      },
+      {
+        name: 'Kappa',
+        price: 70,
+        categoryId: catMap['Starters'],
+        foodType: 'VEG',
+        barcode: 'DEMO-KAPPA',
+        kitchenDept: 'MAIN_KITCHEN',
+        preparationTime: 10
+      },
+      {
+        name: 'Kappa biriyani',
+        price: 130,
+        categoryId: catMap['Main Course'],
+        foodType: 'NON-VEG',
+        barcode: 'DEMO-KAPPA-BIRIYANI',
+        kitchenDept: 'MAIN_KITCHEN',
+        preparationTime: 15
+      },
+      {
+        name: 'Payyam pori',
+        price: 15,
+        categoryId: catMap['Starters'],
+        foodType: 'VEG',
+        barcode: 'DEMO-PAYYAM-PORI',
+        kitchenDept: 'MAIN_KITCHEN',
+        preparationTime: 5
+      }
+    ];
+
+    for (const item of items) {
+      await prisma.product.upsert({
+        where: { barcode: item.barcode },
+        update: {
+          name: item.name,
+          sellingPrice: item.price,
+          mrp: item.price,
+          purchasePrice: item.price * 0.6,
+          categoryId: item.categoryId,
+          foodType: item.foodType,
+          kitchenDept: item.kitchenDept,
+          preparationTime: item.preparationTime,
+          stockQuantity: 999,
+          availability: true,
+          is_active: true
+        },
+        create: {
+          name: item.name,
+          barcode: item.barcode,
+          sellingPrice: item.price,
+          mrp: item.price,
+          purchasePrice: item.price * 0.6,
+          categoryId: item.categoryId,
+          foodType: item.foodType,
+          kitchenDept: item.kitchenDept,
+          preparationTime: item.preparationTime,
+          stockQuantity: 999,
+          unit: 'pcs',
+          availability: true,
+          is_active: true
+        }
+      });
+    }
+
+    // Ensure default table sections and tables exist if empty
+    const sectionCount = await prisma.tableSection.count();
+    if (sectionCount === 0) {
+      const sectionsData = [
+        {
+          name: 'Main Hall (Non-AC)',
+          tables: [
+            { number: 'T01', capacity: 4 },
+            { number: 'T02', capacity: 4 },
+            { number: 'T03', capacity: 2 },
+            { number: 'T04', capacity: 6 }
+          ]
+        },
+        {
+          name: 'AC Cabin',
+          tables: [
+            { number: 'A01', capacity: 4 },
+            { number: 'A02', capacity: 4 },
+            { number: 'A03', capacity: 8 }
+          ]
+        },
+        {
+          name: 'Rooftop Garden',
+          tables: [
+            { number: 'R01', capacity: 4 },
+            { number: 'R02', capacity: 4 },
+            { number: 'R03', capacity: 2 }
+          ]
+        }
+      ];
+
+      for (const sData of sectionsData) {
+        const section = await prisma.tableSection.upsert({
+          where: { name: sData.name },
+          update: {},
+          create: { name: sData.name }
+        });
+        for (const tData of sData.tables) {
+          await prisma.table.upsert({
+            where: { number: tData.number },
+            update: {
+              capacity: tData.capacity,
+              sectionId: section.id
+            },
+            create: {
+              number: tData.number,
+              capacity: tData.capacity,
+              sectionId: section.id,
+              status: 'FREE'
+            }
+          });
+        }
+      }
+    }
+
+    console.log('Auto-seeding completed successfully.');
+  } catch (error) {
+    console.error('Error during auto-seeding:', error);
+  }
+}
+
+autoSeedDatabase();
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
