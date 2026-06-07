@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/api';
-import { BarChart3, TrendingUp, ShoppingBag, Users, Clock, Calendar, FileText, IndianRupee, PieChart, Package, Receipt, X, ArrowUpRight, Plus, Download, FileSpreadsheet, Loader2, Printer, Trash2 } from 'lucide-react';
+import { BarChart3, TrendingUp, ShoppingBag, Users, Clock, Calendar, FileText, IndianRupee, PieChart, Package, Receipt, X, ArrowUpRight, Plus, Download, FileSpreadsheet, Loader2, Printer, Trash2, Percent } from 'lucide-react';
 import { exportUtils } from '../../utils/exportUtils';
 import PartyDetailsModal from '../../components/PartyDetailsModal';
 import BillDetailsModal from '../../components/BillDetailsModal';
@@ -53,6 +53,16 @@ const reportCategories = [
     title: 'Expense Reports',
     reports: [
       { id: 'expenses', name: 'Expense Report', icon: <Clock size={16} /> },
+    ]
+  },
+  {
+    title: 'Restaurant Reports',
+    reports: [
+      { id: 'waiter-sales', name: 'Waiter Sales Performance', icon: <Users className="text-orange-500" size={16} /> },
+      { id: 'table-sales', name: 'Table Sales Report', icon: <BarChart3 className="text-brand-500" size={16} /> },
+      { id: 'kot-reports', name: 'KOT History Log', icon: <FileText className="text-purple-500" size={16} /> },
+      { id: 'cancelled-items', name: 'Cancelled Items Audit', icon: <X className="text-red-500" size={16} /> },
+      { id: 'discounts-report', name: 'Discounts & Freebies Log', icon: <Percent className="text-yellow-500" size={16} /> }
     ]
   }
 ];
@@ -351,6 +361,59 @@ const Reports = () => {
                   `Rs.${p.balanceDue.toFixed(2)}`
                 ]);
                 title = `Ledger: ${reportData.name}`;
+                break;
+
+              case 'waiter-sales':
+                headers = ['Waiter Name', 'Order Count', 'Total Sales'];
+                data = reportData.map((item: any) => [
+                  item.name,
+                  item.orderCount,
+                  `Rs.${item.totalSales.toFixed(2)}`
+                ]);
+                break;
+
+              case 'table-sales':
+                headers = ['Table Name', 'Order Count', 'Total Sales'];
+                data = reportData.map((item: any) => [
+                  item.number,
+                  item.orderCount,
+                  `Rs.${item.totalSales.toFixed(2)}`
+                ]);
+                break;
+
+              case 'kot-reports':
+                headers = ['Date', 'KOT No', 'Table', 'Waiter', 'Status', 'Items Count'];
+                data = reportData.map((kot: any) => [
+                  new Date(kot.createdAt).toLocaleString(),
+                  kot.kotNo,
+                  kot.tableName || 'N/A',
+                  kot.waiterName || 'N/A',
+                  kot.status,
+                  kot.items?.length || 0
+                ]);
+                break;
+
+              case 'cancelled-items':
+                headers = ['Date', 'Item Name', 'KOT No', 'Table/Waiter', 'Qty Cancelled', 'Reason'];
+                data = reportData.map((item: any) => [
+                  new Date(item.createdAt || item.kot?.createdAt).toLocaleString(),
+                  item.name + (item.variant ? ` (${item.variant})` : ''),
+                  item.kot?.kotNo || 'N/A',
+                  (item.kot?.tableName || 'Takeaway') + (item.kot?.waiterName ? ` / ${item.kot.waiterName}` : ''),
+                  item.quantity,
+                  item.cancelReason || item.notes || 'No reason'
+                ]);
+                break;
+
+              case 'discounts-report':
+                headers = ['Date', 'Invoice', 'Discount Given', 'Bill Total', 'Authorized By'];
+                data = reportData.map((order: any) => [
+                  new Date(order.createdAt).toLocaleDateString(),
+                  order.invoiceNo,
+                  `Rs.${order.discount.toFixed(2)}`,
+                  `Rs.${order.grandTotal.toFixed(2)}`,
+                  order.creator?.name || 'Staff'
+                ]);
                 break;
 
               default:
@@ -1317,6 +1380,199 @@ const Reports = () => {
                   </tbody>
                </table>
              </div>
+          </div>
+        );
+      }
+
+      case 'waiter-sales': {
+        if (!Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Loading Waiter Sales...</div>;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs text-slate-500 font-bold uppercase border-b">
+                <tr>
+                  <th className="p-4">Waiter Name</th>
+                  <th className="p-4 text-center">Order Count</th>
+                  <th className="p-4 text-right">Total Sales</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-slate-700 font-medium">
+                {reportData.map((item: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 font-bold text-slate-900">{item.name}</td>
+                    <td className="p-4 text-center font-bold text-brand-600">{item.orderCount}</td>
+                    <td className="p-4 text-right font-black text-emerald-600">₹{item.totalSales.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {reportData.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="p-12 text-center text-slate-400">No waiter sales recorded.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'table-sales': {
+        if (!Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Loading Table Sales...</div>;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs text-slate-500 font-bold uppercase border-b">
+                <tr>
+                  <th className="p-4">Table Name</th>
+                  <th className="p-4 text-center">Order Count</th>
+                  <th className="p-4 text-right">Total Sales</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-slate-700 font-medium">
+                {reportData.map((item: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 font-bold text-slate-900">{item.number}</td>
+                    <td className="p-4 text-center font-bold text-brand-600">{item.orderCount}</td>
+                    <td className="p-4 text-right font-black text-emerald-600">₹{item.totalSales.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {reportData.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="p-12 text-center text-slate-400">No table sales recorded.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'kot-reports': {
+        if (!Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Loading KOT History...</div>;
+        return (
+          <div className="space-y-4">
+            {reportData.map((kot: any) => (
+              <div key={kot.id} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-start border-b pb-4 mb-4">
+                  <div>
+                    <h3 className="font-black text-slate-800 text-lg">KOT #{kot.kotNo}</h3>
+                    <div className="flex gap-4 mt-1 text-xs text-slate-400">
+                      <span>Table: {kot.tableName || 'N/A'}</span>
+                      <span>Waiter: {kot.waiterName || 'N/A'}</span>
+                      <span>Mode: {kot.orderType}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                      kot.status === 'SERVED' ? 'bg-green-100 text-green-700' :
+                      kot.status === 'READY' ? 'bg-blue-100 text-blue-700' :
+                      kot.status === 'PREPARING' ? 'bg-orange-100 text-orange-700' :
+                      kot.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {kot.status}
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-1">{new Date(kot.createdAt).toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {kot.items?.map((item: any, idx: number) => (
+                    <div key={item.id || idx} className="flex justify-between items-center text-sm font-semibold text-slate-700">
+                      <div className="flex-1">
+                        <span>{item.name}</span>
+                        {item.variant && <span className="text-xs text-slate-400 ml-2">({item.variant})</span>}
+                        {item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0 && (
+                          <span className="text-xs text-slate-400 block font-normal pl-4">
+                            + {item.modifiers.map((m: any) => m.name).join(', ')}
+                          </span>
+                        )}
+                        {item.notes && <span className="text-xs text-orange-500 block font-normal pl-4">* Note: {item.notes}</span>}
+                      </div>
+                      <span className="font-bold text-slate-900">Qty: {item.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {reportData.length === 0 && (
+              <div className="bg-white p-8 rounded-xl text-center text-slate-400 border shadow-sm">No KOT history found.</div>
+            )}
+          </div>
+        );
+      }
+
+      case 'cancelled-items': {
+        if (!Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Loading Cancelled Items...</div>;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs text-slate-500 font-bold uppercase border-b">
+                <tr>
+                  <th className="p-4">Time</th>
+                  <th className="p-4">Item Name</th>
+                  <th className="p-4 text-center">KOT No</th>
+                  <th className="p-4 text-center">Table / Waiter</th>
+                  <th className="p-4 text-center">Qty</th>
+                  <th className="p-4">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-slate-700 font-medium">
+                {reportData.map((item: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 text-xs text-slate-500">{new Date(item.createdAt || item.kot?.createdAt).toLocaleString()}</td>
+                    <td className="p-4 font-bold text-slate-900">
+                      {item.name}
+                      {item.variant && <span className="text-xs text-slate-400 ml-2">({item.variant})</span>}
+                    </td>
+                    <td className="p-4 text-center font-bold text-slate-500">KOT #{item.kot?.kotNo}</td>
+                    <td className="p-4 text-center text-slate-600 text-xs">
+                      {item.kot?.tableName || 'Takeaway'} {item.kot?.waiterName ? `/ ${item.kot.waiterName}` : ''}
+                    </td>
+                    <td className="p-4 text-center font-bold text-red-600">{item.quantity}</td>
+                    <td className="p-4 text-slate-500 text-xs italic">{item.cancelReason || item.notes || 'No reason'}</td>
+                  </tr>
+                ))}
+                {reportData.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-slate-400">No cancelled items found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'discounts-report': {
+        if (!Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Loading Discounts...</div>;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs text-slate-500 font-bold uppercase border-b">
+                <tr>
+                  <th className="p-4">Date</th>
+                  <th className="p-4">Invoice</th>
+                  <th className="p-4 text-right">Discount Given</th>
+                  <th className="p-4 text-right">Bill Total</th>
+                  <th className="p-4">Authorized By</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-slate-700 font-medium">
+                {reportData.map((order: any, i: number) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4">{new Date(order.createdAt).toLocaleDateString()}</td>
+                    <td className="p-4 font-bold text-slate-800">{order.invoiceNo}</td>
+                    <td className="p-4 text-right font-bold text-red-600">₹{order.discount.toFixed(2)}</td>
+                    <td className="p-4 text-right font-black text-slate-900">₹{order.grandTotal.toFixed(2)}</td>
+                    <td className="p-4 text-slate-600">{order.creator?.name || 'Staff'}</td>
+                  </tr>
+                ))}
+                {reportData.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-12 text-center text-slate-400">No discounts given in this period.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         );
       }

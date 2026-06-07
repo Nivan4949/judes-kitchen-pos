@@ -4,6 +4,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 import api from '../../api/api';
 import usePOSStore from '../../store/posStore';
 import useAuthStore from '../../store/authStore';
+import useRestaurantStore from '../../store/restaurantStore';
 import PaymentModal from '../../components/PaymentModal';
 import ReceiptPreview from '../../components/ReceiptPreview';
 import { Product, CartItem } from '../../types';
@@ -11,6 +12,7 @@ import { offlineDB } from '../../utils/offlineDB';
 import { addToSyncQueue } from '../../utils/syncQueue';
 import useNetworkStatus from '../../hooks/useNetworkStatus';
 import { useBluetoothPrinter } from '../../hooks/useBluetoothPrinter';
+import { EscPosBuilder } from '../../utils/escPosUtil';
 import InstallPrompt from '../../components/InstallPrompt';
 import CustomerSelectionModal from '../../components/CustomerSelectionModal';
 import RedeemPointsModal from '../../components/RedeemPointsModal';
@@ -26,6 +28,24 @@ const POSInterface: React.FC = () => {
   const clearCart = usePOSStore(state => state.clearCart);
   const getTotals = usePOSStore(state => state.getTotals);
   
+  const activeOrderId = usePOSStore(state => state.activeOrderId);
+  const orderType = usePOSStore(state => state.orderType);
+  const setOrderType = usePOSStore(state => state.setOrderType);
+  const waiterName = usePOSStore(state => state.waiterName);
+  const setWaiter = usePOSStore(state => state.setWaiter);
+  const tableName = usePOSStore(state => state.tableName);
+  const tableId = usePOSStore(state => state.tableId);
+  const setTable = usePOSStore(state => state.setTable);
+  const notes = usePOSStore(state => state.notes);
+  const setNotes = usePOSStore(state => state.setNotes);
+  const heldOrders = usePOSStore(state => state.heldOrders);
+  const holdCurrentOrder = usePOSStore(state => state.holdCurrentOrder);
+  const resumeHeldOrder = usePOSStore(state => state.resumeHeldOrder);
+  const deleteHeldOrder = usePOSStore(state => state.deleteHeldOrder);
+  const loadRunningOrder = usePOSStore(state => state.loadRunningOrder);
+
+  const { tables, fetchTables, settings, fetchSettings, sections, fetchSections } = useRestaurantStore();
+
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -42,8 +62,18 @@ const POSInterface: React.FC = () => {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Modals / Selection states
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
+  const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<any>(null);
+  const [selectedModifiers, setSelectedModifiers] = useState<any[]>([]);
+  const [customizationQty, setCustomizationQty] = useState(1);
+  const [itemNotesInput, setItemNotesInput] = useState('');
+  const [waiters, setWaiters] = useState<any[]>([]);
+
   const isOnline = useNetworkStatus();
-  const { isConnected, isConnecting, disconnect, connect } = useBluetoothPrinter();
+  const { isConnected, isConnecting, disconnect, connect, print } = useBluetoothPrinter();
   
   const customer = usePOSStore(state => state.customer);
   const setCustomer = usePOSStore(state => state.setCustomer);
@@ -124,9 +154,51 @@ const POSInterface: React.FC = () => {
     setFilteredProducts(filtered);
   };
 
+  const fetchWaiters = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      const userList = res.data;
+      const waiterList = userList.filter((u: any) => u.role === 'WAITER');
+      setWaiters(waiterList.length > 0 ? waiterList : userList);
+    } catch (err) {
+      console.error('Failed to fetch waiters:', err);
+    }
+  };
+
+  const parseJsonField = (field: any) => {
+    if (!field) return [];
+    if (typeof field === 'string') {
+      try {
+        return JSON.parse(field);
+      } catch (e) {
+        return [];
+      }
+    }
+    return field;
+  };
+
+  const handleProductSelect = (product: Product) => {
+    const productVariants = parseJsonField(product.variants);
+    const productAddons = parseJsonField(product.addons);
+    
+    if (productVariants.length > 0 || productAddons.length > 0) {
+      setCustomizingProduct(product);
+      setSelectedVariant(productVariants.length > 0 ? productVariants[0] : null);
+      setSelectedModifiers([]);
+      setCustomizationQty(1);
+      setItemNotesInput('');
+    } else {
+      addToCart(product, 1);
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
     fetchProducts();
+    fetchTables();
+    fetchSections();
+    fetchWaiters();
+    fetchSettings();
     
     // Initialize last invoice number from DB once
     const initInvoiceNo = async () => {
@@ -143,6 +215,32 @@ const POSInterface: React.FC = () => {
     };
     initInvoiceNo();
   }, []);
+
+  // Trigger auto-charge updates based on order mode and subtotal
+  useEffect(() => {
+    if (!settings) return;
+    
+    const { subtotal } = getTotals();
+    let serviceCharge = 0;
+    let parcelCharge = 0;
+    let deliveryCharge = 0;
+
+    if (orderType === 'Dine-in') {
+      const rate = settings.serviceChargeRate || 0;
+      serviceCharge = (subtotal * rate) / 100;
+    } else if (orderType === 'Takeaway') {
+      parcelCharge = settings.parcelCharge || 0;
+    } else if (orderType === 'Delivery') {
+      deliveryCharge = settings.deliveryCharge || 0;
+    }
+
+    usePOSStore.getState().setCharges({
+      serviceCharge,
+      parcelCharge,
+      deliveryCharge
+    });
+  }, [orderType, cart, settings]);
+
 
   const handleCategorySelect = (id: string | null) => {
     setSelectedCategoryId(id);
@@ -224,20 +322,17 @@ const POSInterface: React.FC = () => {
     };
   }, [allProducts, addToCart]);
 
-  const handlePaymentComplete = async (method: string, amount: string, orderType: string = 'Walk-in') => {
+  const handlePaymentComplete = async (method: string, amount: string, orderMode: string = 'Walk-in') => {
     if (cart.length === 0) return;
 
-    const { subtotal, taxTotal, grandTotal, roundedTotal, savings } = getTotals();
+    const totals = getTotals();
+    const { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
 
     // DETECT NEXT SEQUENTIAL INVOICE NO - Optimized to avoid reading all orders
     let nextInvoiceNo = localStorage.getItem('last_invoice_no') || '100';
     try {
       const db = await offlineDB.initDB();
       const tx = db.transaction('orders', 'readonly');
-      const store = tx.objectStore('orders');
-      // Get the last record by index or by key if IDs are sequential/sortable
-      // Since we use UUIDs for keys, we might need a dedicated way.
-      // For now, let's use the local orders cache if small, or just increment last known.
       const lastInvoice = parseInt(nextInvoiceNo);
       nextInvoiceNo = (lastInvoice + 1).toString();
       localStorage.setItem('last_invoice_no', nextInvoiceNo);
@@ -245,18 +340,23 @@ const POSInterface: React.FC = () => {
       nextInvoiceNo = (Date.now() % 10000).toString();
     }
     
-    const orderData = {
-      id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const orderData: any = {
+      id: activeOrderId || ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
-      }), 
-      invoiceNo: nextInvoiceNo,
+      })), 
+      invoiceNo: activeOrderId ? undefined : nextInvoiceNo,
       orderItems: cart.map((item: any, index: number) => ({
-        ...item,
-        slNo: index + 1,
+        productId: item.id,
+        quantity: item.quantity,
         price: item.sellingPrice,
+        mrp: item.mrp || item.sellingPrice,
         gstRate: item.gstRate ?? 0,
-        total: (item.sellingPrice * item.quantity) + ((item.sellingPrice * ((item.gstRate ?? 0) / 100)) * item.quantity)
+        discount: 0,
+        total: (item.sellingPrice + (item.modifiersPrice || 0)) * item.quantity,
+        notes: item.notes || null,
+        variant: item.selectedVariant?.name || null,
+        modifiers: item.selectedModifiers || []
       })),
       subtotal,
       taxTotal,
@@ -268,7 +368,7 @@ const POSInterface: React.FC = () => {
       amountPaid: parseFloat(amount) || 0,
       balance: Math.max(0, roundedTotal - (parseFloat(amount) || 0)),
       paymentMode: method,
-      orderType: orderType, // Added Order Type
+      orderType: orderType,
       discount: loyaltyDiscount + manualDiscount,
       manualDiscount: manualDiscount,
       loyaltyPointsRedeemed: appliedPoints,
@@ -277,6 +377,13 @@ const POSInterface: React.FC = () => {
       userName: user?.name || 'Staff',
       creatorId: user?.id || null,
       createdAt: new Date().toISOString(),
+      waiterName: waiterName || null,
+      tableName: tableName || null,
+      tableId: tableId || null,
+      notes: notes || null,
+      serviceCharge: serviceCharge,
+      parcelCharge: parcelCharge,
+      deliveryCharge: deliveryCharge,
       isSyncing: true // Visual flag for the receipt
     };
 
@@ -312,6 +419,16 @@ const POSInterface: React.FC = () => {
         console.error('Local persistence failed:', err);
       }
       
+      // Auto Print receipt if printer is paired & connected
+      if (isConnected && print) {
+        try {
+          const printBytes = EscPosBuilder.generateReceipt(finalOrderData, settings);
+          await print(printBytes);
+        } catch (printErr) {
+          console.error('Receipt print failed:', printErr);
+        }
+      }
+
       // 2. UI TRANSITION (INSTANT)
       setRecentOrder(finalOrderData);
       clearCart();
@@ -320,10 +437,14 @@ const POSInterface: React.FC = () => {
 
       // 3. TRUE BACKGROUND SERVER SYNC
       if (isOnline) {
-        api.post('/orders', orderData, {
-          headers: { 'x-terminal-id': 'T1' },
-          skipAuthRedirect: true
-        } as any).then(response => {
+        const syncPromise = activeOrderId
+          ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
+          : api.post('/orders', orderData, {
+              headers: { 'x-terminal-id': 'T1' },
+              skipAuthRedirect: true
+            } as any);
+
+        syncPromise.then(response => {
           const syncedData = { ...orderData, ...response.data, isSyncing: false, isSynced: true };
           offlineDB.put('orders', syncedData).catch(() => {});
           
@@ -331,13 +452,13 @@ const POSInterface: React.FC = () => {
           setRecentOrder(prev => prev?.id === finalOrderData.id ? syncedData : prev);
           
           // Fire WhatsApp ONLY after successful sync completion
-          // Silent WhatsApp dispatch
           if (syncedData.customer?.phone) {
              api.post('/orders/share-whatsapp', { 
                  orderId: syncedData.id || syncedData.invoiceNo, 
                  phone: syncedData.customer.phone 
              }, { skipAuthRedirect: true } as any).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
           }
+          fetchTables(); // Refresh tables layout state
         }).catch(async (error) => {
           console.error('Checkout Sync Failed, added to queue:', error);
           await addToSyncQueue('CREATE_ORDER', orderData);
@@ -352,7 +473,118 @@ const POSInterface: React.FC = () => {
     }
   };
 
-  const { subtotal, taxTotal, grandTotal } = getTotals();
+  const handleSendKot = async () => {
+    if (cart.length === 0) return;
+
+    if (orderType === 'Dine-in') {
+      if (!tableId) {
+        alert('Please assign a dining table first.');
+        setIsTableModalOpen(true);
+        return;
+      }
+      if (!waiterName) {
+        alert('Please select a waiter first.');
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      const kotItems = cart.map(item => ({
+        productId: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.sellingPrice,
+        notes: item.notes || null,
+        variant: item.selectedVariant?.name || null,
+        modifiers: item.selectedModifiers || []
+      }));
+
+      const totals = getTotals();
+      const orderPayload = {
+        id: activeOrderId || undefined,
+        invoiceNo: activeOrderId ? undefined : (Date.now() % 10000).toString(),
+        orderItems: cart.map((item, idx) => ({
+          productId: item.id,
+          quantity: item.quantity,
+          price: item.sellingPrice,
+          mrp: item.mrp || item.sellingPrice,
+          gstRate: item.gstRate ?? 0,
+          discount: 0,
+          total: (item.sellingPrice + (item.modifiersPrice || 0)) * item.quantity,
+          notes: item.notes || null,
+          variant: item.selectedVariant?.name || null,
+          modifiers: item.selectedModifiers || []
+        })),
+        subtotal: totals.subtotal,
+        discount: totals.loyaltyDiscount + totals.manualDiscount,
+        taxTotal: totals.taxTotal,
+        grandTotal: totals.grandTotal,
+        roundedTotal: totals.roundedTotal,
+        savings: totals.savings,
+        amountPaid: 0,
+        balance: totals.roundedTotal,
+        paymentMode: 'CASH',
+        orderType,
+        waiterName,
+        tableName,
+        tableId,
+        notes: notes || null,
+        serviceCharge: totals.serviceCharge,
+        parcelCharge: totals.parcelCharge,
+        deliveryCharge: totals.deliveryCharge,
+        status: 'PENDING'
+      };
+
+      let orderIdToUse = activeOrderId;
+
+      if (activeOrderId) {
+        const response = await api.put(`/orders/${activeOrderId}`, orderPayload);
+        console.log('Order updated:', response.data);
+      } else {
+        const response = await api.post('/orders', orderPayload);
+        orderIdToUse = response.data.id;
+        // Set activeOrderId in store
+        usePOSStore.setState({ activeOrderId: orderIdToUse });
+        console.log('Order created:', response.data);
+      }
+
+      // Generate KOT
+      const kotResponse = await api.post('/kots', {
+        orderId: orderIdToUse,
+        tableId,
+        tableName,
+        waiterName,
+        orderType,
+        items: kotItems
+      });
+
+      console.log('KOT response:', kotResponse.data);
+      const { kot, cancelKot } = kotResponse.data;
+
+      // Bluetooth Print
+      if (isConnected && print) {
+        if (kot) {
+          const kotBytes = EscPosBuilder.generateKotReceipt(kot, settings);
+          await print(kotBytes);
+        }
+        if (cancelKot) {
+          const cancelKotBytes = EscPosBuilder.generateKotReceipt(cancelKot, settings);
+          await print(cancelKotBytes);
+        }
+      }
+
+      alert('KOT sent to kitchen successfully!');
+      fetchTables(); // Refresh floor status
+    } catch (error: any) {
+      console.error('KOT Failed:', error);
+      alert(error.response?.data?.error || 'Failed to place KOT');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal } = getTotals();
 
   return (
     <div className="flex flex-col h-full bg-slate-100 font-sans text-slate-800 overflow-hidden relative">
@@ -496,7 +728,7 @@ const POSInterface: React.FC = () => {
                   <ProductCard
                     key={product.id}
                     product={product}
-                    onSelect={addToCart}
+                    onSelect={handleProductSelect}
                   />
                 ))
               ) : (
@@ -535,13 +767,78 @@ const POSInterface: React.FC = () => {
               <ShoppingCart size={22} className="text-brand-primary hidden md:block" />
               <h2 className="font-bold text-lg text-slate-700">Cart ({cart.length})</h2>
             </div>
-            <button 
-              onClick={clearCart}
-              className="text-red-500 hover:bg-red-50 p-1.5 md:p-2 rounded-lg transition-colors group"
-            >
-              <Trash2 size={18} className="md:w-5 md:h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {heldOrders.length > 0 && (
+                <button
+                  onClick={() => setIsHeldModalOpen(true)}
+                  className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-amber-500/20 transition-colors"
+                >
+                  Held ({heldOrders.length})
+                </button>
+              )}
+              {cart.length > 0 && (
+                <button
+                  onClick={holdCurrentOrder}
+                  className="px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-600 font-black rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-colors"
+                >
+                  Hold
+                </button>
+              )}
+              <button 
+                onClick={clearCart}
+                className="text-red-500 hover:bg-red-50 p-1.5 md:p-2 rounded-lg transition-colors group"
+              >
+                <Trash2 size={18} className="md:w-5 md:h-5" />
+              </button>
+            </div>
           </div>
+
+          {/* Order Mode Selector Tabs */}
+          <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex gap-2 shrink-0">
+            {['Dine-in', 'Takeaway', 'Delivery'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setOrderType(mode)}
+                className={`flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border ${
+                  orderType === mode
+                    ? 'bg-brand-primary text-white shadow shadow-brand-primary/20 border-brand-primary'
+                    : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200'
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          {/* Dine-in Table / Waiter Context Panel */}
+          {orderType === 'Dine-in' && (
+            <div className="p-3 border-b border-slate-100 bg-brand-50/20 flex gap-2 shrink-0">
+              <button
+                onClick={() => setIsTableModalOpen(true)}
+                className={`flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border font-bold text-xs uppercase tracking-wider transition-all ${
+                  tableId 
+                    ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary shadow-sm shadow-brand-primary/5'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-brand-primary'
+                }`}
+              >
+                <Users size={14} />
+                <span>{tableName ? `Table: ${tableName}` : 'Select Table'}</span>
+              </button>
+
+              <select
+                className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-xs uppercase tracking-wider text-slate-700 focus:outline-none focus:border-brand-primary"
+                value={waiterName}
+                onChange={(e) => setWaiter(e.target.value)}
+              >
+                <option value="">-- Select Waiter --</option>
+                {waiters.map((w: any) => (
+                  <option key={w.id} value={w.name}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Cart Items List */}
           <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -645,6 +942,24 @@ const POSInterface: React.FC = () => {
                 <span>Subtotal</span>
                 <span>₹{subtotal.toFixed(2)}</span>
               </div>
+              {serviceCharge > 0 && (
+                <div className="flex justify-between text-xs md:text-sm text-slate-400">
+                  <span>Service Charge ({settings?.serviceChargeRate || 0}%)</span>
+                  <span>₹{serviceCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {parcelCharge > 0 && (
+                <div className="flex justify-between text-xs md:text-sm text-slate-400">
+                  <span>Parcel Charge</span>
+                  <span>₹{parcelCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {deliveryCharge > 0 && (
+                <div className="flex justify-between text-xs md:text-sm text-slate-400">
+                  <span>Delivery Charge</span>
+                  <span>₹{deliveryCharge.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs md:text-sm text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded-lg">
                 <span>Total Savings</span>
                 <span>₹{getTotals().savings.toFixed(2)}</span>
@@ -667,13 +982,21 @@ const POSInterface: React.FC = () => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 gap-2 md:gap-3">
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
+              <button 
+                onClick={handleSendKot}
+                className="py-3 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl md:rounded-2xl text-xs uppercase tracking-wider shadow border border-slate-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                disabled={cart.length === 0 || loading}
+              >
+                <Printer size={14} /> Send KOT
+              </button>
+              
               <button 
                 onClick={() => { setIsMobileCartOpen(false); setIsPaymentModalOpen(true); }}
-                className="py-3 md:py-4 w-full bg-brand-primary hover:bg-brand-secondary text-white font-black rounded-xl md:rounded-2xl text-sm md:text-base shadow-lg shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                disabled={cart.length === 0}
+                className="py-3 bg-brand-primary hover:bg-brand-secondary text-white font-black rounded-xl md:rounded-2xl text-xs uppercase tracking-wider shadow shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                disabled={cart.length === 0 || loading}
               >
-                <CreditCard size={18} /> PROCEED TO PAYMENT
+                <CreditCard size={14} /> Settle Bill
               </button>
             </div>
           </div>
@@ -725,6 +1048,286 @@ const POSInterface: React.FC = () => {
 
       {isRedeemModalOpen && (
         <RedeemPointsModal onClose={() => setIsRedeemModalOpen(false)} />
+      )}
+
+      <InstallPrompt />
+
+      {/* Customization Modal */}
+      {customizingProduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setCustomizingProduct(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1.5"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-black text-slate-900 mb-1">{customizingProduct.name}</h2>
+            <p className="text-xs text-brand-primary font-bold uppercase mb-4">Customize Dish</p>
+
+            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+              {/* Product Type Tag (Veg/Non-Veg) */}
+              <div className="flex gap-2">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
+                  customizingProduct.foodType === 'NON_VEG' ? 'bg-red-50 text-red-600 border border-red-200' :
+                  customizingProduct.foodType === 'EGG' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                  'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                }`}>
+                  {customizingProduct.foodType || 'VEG'}
+                </span>
+              </div>
+
+              {/* Variants Section */}
+              {parseJsonField(customizingProduct.variants).length > 0 && (
+                <div>
+                  <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">Select Portion / Size *</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {parseJsonField(customizingProduct.variants).map((variant: any, idx: number) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedVariant(variant)}
+                        className={`p-3 rounded-xl font-bold text-xs uppercase border transition-all text-center ${
+                          selectedVariant?.name === variant.name
+                            ? 'bg-brand-primary/10 border-brand-primary text-brand-primary ring-2 ring-brand-primary/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="font-black text-sm">{variant.name}</div>
+                        <div className="text-[10px] opacity-70 mt-0.5">₹{variant.price}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Addons Section */}
+              {parseJsonField(customizingProduct.addons).length > 0 && (
+                <div>
+                  <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">Add Extra Customizations / Modifiers</h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    {parseJsonField(customizingProduct.addons).map((addon: any, idx: number) => {
+                      const isSelected = selectedModifiers.some(m => m.name === addon.name);
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedModifiers(selectedModifiers.filter(m => m.name !== addon.name));
+                            } else {
+                              setSelectedModifiers([...selectedModifiers, addon]);
+                            }
+                          }}
+                          className={`p-3 rounded-xl font-bold text-xs uppercase border transition-all text-left flex justify-between items-center ${
+                            isSelected
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-100'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{addon.name}</span>
+                          <span className="font-bold">+ ₹{addon.price}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Chef Notes instructions */}
+              <div>
+                <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Chef Instructions / Notes</h3>
+                <textarea
+                  placeholder="e.g. No onions, Extra spicy, Gluten-free..."
+                  className="w-full p-3 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none text-sm min-h-[80px]"
+                  value={itemNotesInput}
+                  onChange={(e) => setItemNotesInput(e.target.value)}
+                />
+              </div>
+
+              {/* Customization Quantity Selector */}
+              <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quantity</span>
+                <div className="flex items-center gap-4">
+                  <button 
+                    type="button"
+                    onClick={() => setCustomizationQty(Math.max(1, customizationQty - 1))}
+                    className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span className="font-black text-lg text-slate-800">{customizationQty}</span>
+                  <button 
+                    type="button"
+                    onClick={() => setCustomizationQty(customizationQty + 1)}
+                    className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Customization Footer */}
+            <div className="mt-6 pt-4 border-t border-slate-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setCustomizingProduct(null)}
+                className="flex-1 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest text-center"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart(customizingProduct, customizationQty, selectedVariant, selectedModifiers, itemNotesInput);
+                  setCustomizingProduct(null);
+                }}
+                className="flex-1 py-3 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-black text-xs uppercase tracking-wider shadow"
+              >
+                Add To Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Table Selection Modal */}
+      {isTableModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsTableModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1.5"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-black text-slate-900 mb-1">Assign Dining Table</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mb-6">Select a dining slot from the floor plan</p>
+
+            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
+              {sections.map((sec: any) => {
+                const sectionTables = tables.filter((t: any) => t.sectionId === sec.id);
+                if (sectionTables.length === 0) return null;
+
+                return (
+                  <div key={sec.id} className="space-y-3">
+                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b border-slate-150 pb-1">{sec.name}</h3>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {sectionTables.map((table: any) => {
+                        const isOccupied = table.status === 'OCCUPIED';
+                        const isSelected = tableId === table.id;
+
+                        return (
+                          <button
+                            key={table.id}
+                            type="button"
+                            onClick={async () => {
+                              if (isOccupied && table.currentOrderId !== activeOrderId) {
+                                if (confirm(`Table ${table.number} has a running order. Load this running order into the POS?`)) {
+                                  try {
+                                    const res = await api.get(`/orders/${table.currentOrderId}`);
+                                    loadRunningOrder(res.data, res.data.orderItems);
+                                    setIsTableModalOpen(false);
+                                  } catch (err) {
+                                    alert('Failed to load table order.');
+                                  }
+                                }
+                              } else {
+                                setTable(table.id, table.number);
+                                setIsTableModalOpen(false);
+                              }
+                            }}
+                            className={`p-4 rounded-2xl border text-center transition-all flex flex-col justify-between items-center h-24 ${
+                              isSelected
+                                ? 'border-brand-primary bg-brand-primary/10 text-brand-primary font-black ring-2 ring-brand-primary/20'
+                                : isOccupied
+                                ? 'border-amber-300 bg-amber-50 text-amber-700 font-bold'
+                                : 'border-slate-200 hover:border-brand-400 bg-white text-slate-700'
+                            }`}
+                          >
+                            <span className="text-lg font-black">{table.number}</span>
+                            <span className="text-[9px] uppercase tracking-wider opacity-60">
+                              {isOccupied ? `₹${table.runningOrderAmount.toFixed(0)}` : `${table.capacity} Pax`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Held Orders Modal */}
+      {isHeldModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsHeldModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1.5"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-black text-slate-900 mb-1">Held Orders Queue</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mb-6">Resume or manage suspended drafts</p>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+              {heldOrders.map((held: any) => (
+                <div 
+                  key={held.id}
+                  className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex justify-between items-center hover:bg-slate-100/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0 pr-4">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-slate-800 text-sm">{held.id}</span>
+                      <span className="text-[10px] text-slate-400 font-bold">{held.timestamp}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 flex flex-wrap gap-2">
+                      <span className="font-bold text-brand-primary uppercase">{held.orderType}</span>
+                      {held.tableName && <span className="text-slate-400">• Table: {held.tableName}</span>}
+                      {held.waiterName && <span className="text-slate-400">• Waiter: {held.waiterName}</span>}
+                      <span>• {held.cart.length} items</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        resumeHeldOrder(held.id);
+                        setIsHeldModalOpen(false);
+                      }}
+                      className="px-3 py-1.5 bg-brand-primary text-white text-[10px] font-black uppercase tracking-wider rounded-lg shadow hover:bg-brand-secondary transition-all"
+                    >
+                      Resume
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this held order?')) {
+                          deleteHeldOrder(held.id);
+                        }
+                      }}
+                      className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {heldOrders.length === 0 && (
+                <div className="text-center py-10 text-slate-400 font-bold italic">
+                  No orders on hold.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       <InstallPrompt />

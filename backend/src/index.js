@@ -51,6 +51,10 @@ app.use('/api/devices', require('./api/deviceRoutes'));
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/ap', require('./api/apRoutes'));
+app.use('/api/tables', require('./api/tableRoutes'));
+app.use('/api/kots', require('./api/kotRoutes'));
+app.use('/api/shifts', require('./api/shiftRoutes'));
+app.use('/api/restaurant-settings', require('./api/settingsRoutes'));
 
 // Health Checks
 app.get('/health', (req, res) => {

@@ -893,4 +893,150 @@ router.get('/debug-logs', auth(['ADMIN']), (req, res) => {
   res.json(errorLog);
 });
 
+// RESTAURANT SPECIFIC REPORT ENDPOINTS
+
+// Waiter Performance Report
+router.get('/waiter-sales', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { filter, startDate, endDate, timezoneOffset } = req.query;
+    const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
+
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: dateRange,
+        waiterName: { not: null }
+      },
+      select: {
+        waiterName: true,
+        grandTotal: true
+      }
+    });
+
+    const waiterMap = {};
+    orders.forEach(o => {
+      const name = o.waiterName || 'Unknown';
+      if (!waiterMap[name]) {
+        waiterMap[name] = { name, totalSales: 0, orderCount: 0 };
+      }
+      waiterMap[name].totalSales += o.grandTotal;
+      waiterMap[name].orderCount += 1;
+    });
+
+    res.json(Object.values(waiterMap).sort((a,b) => b.totalSales - a.totalSales));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Table Sales Report
+router.get('/table-sales', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { filter, startDate, endDate, timezoneOffset } = req.query;
+    const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
+
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: dateRange,
+        tableName: { not: null }
+      },
+      select: {
+        tableName: true,
+        grandTotal: true
+      }
+    });
+
+    const tableMap = {};
+    orders.forEach(o => {
+      const number = o.tableName || 'Unknown';
+      if (!tableMap[number]) {
+        tableMap[number] = { number, totalSales: 0, orderCount: 0 };
+      }
+      tableMap[number].totalSales += o.grandTotal;
+      tableMap[number].orderCount += 1;
+    });
+
+    res.json(Object.values(tableMap).sort((a,b) => b.totalSales - a.totalSales));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// KOT Report
+router.get('/kot-reports', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { filter, startDate, endDate, timezoneOffset } = req.query;
+    const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
+
+    const kots = await prisma.kOT.findMany({
+      where: {
+        createdAt: dateRange
+      },
+      include: {
+        items: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json(kots);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancelled Items & KOT items Report
+router.get('/cancelled-items', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { filter, startDate, endDate, timezoneOffset } = req.query;
+    const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
+
+    const cancelledKotItems = await prisma.kOTItem.findMany({
+      where: {
+        status: 'CANCELLED',
+        createdAt: dateRange
+      },
+      include: {
+        kot: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json(cancelledKotItems);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Discount Details Report
+router.get('/discounts-report', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { filter, startDate, endDate, timezoneOffset } = req.query;
+    const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
+
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: dateRange,
+        discount: { gt: 0 }
+      },
+      select: {
+        invoiceNo: true,
+        discount: true,
+        grandTotal: true,
+        createdAt: true,
+        creator: { select: { name: true } }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

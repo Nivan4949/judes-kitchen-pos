@@ -1,12 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/api';
 import useAuthStore from '../../store/authStore';
-import { Shield, Users, Key, AlertCircle, CheckCircle2, Loader2, Save, UserX, UserCheck, Tag, Plus, Edit2, Trash2, Image as ImageIcon, Search, Camera, X as CloseIcon, Printer, Bluetooth, BluetoothOff, Info, Eye, EyeOff } from 'lucide-react';
+import { Shield, Users, Key, AlertCircle, CheckCircle2, Loader2, Save, UserX, UserCheck, Tag, Plus, Edit2, Trash2, Image as ImageIcon, Search, Camera, X as CloseIcon, Printer, Bluetooth, BluetoothOff, Info, Eye, EyeOff, Store } from 'lucide-react';
 import { useBluetoothPrinter } from '../../hooks/useBluetoothPrinter';
+import useRestaurantStore from '../../store/restaurantStore';
 
 const Settings = () => {
     const user = useAuthStore((state: any) => state.user);
-    const [activeTab, setActiveTab] = useState<'SECURITY' | 'USERS' | 'CATEGORIES' | 'PHOTOS' | 'PRINTER'>(user?.role === 'ADMIN' ? 'USERS' : 'SECURITY');
+    const [activeTab, setActiveTab] = useState<'SECURITY' | 'USERS' | 'CATEGORIES' | 'PHOTOS' | 'PRINTER' | 'RESTAURANT'>(user?.role === 'ADMIN' ? 'USERS' : 'SECURITY');
+    const { settings, fetchSettings, saveSettings } = useRestaurantStore();
+    const [restaurantForm, setRestaurantForm] = useState({
+        name: '',
+        address: '',
+        phone: '',
+        gstin: '',
+        gstRate: 5,
+        serviceChargeRate: 0,
+        parcelCharge: 0,
+        deliveryCharge: 0,
+        printerSize: '80mm'
+    });
+
     const { connect, disconnect, isConnected, isConnecting, device, error: bluetoothError, print } = useBluetoothPrinter();
     const [loading, setLoading] = useState(false);
     const [users, setUsers] = useState<any[]>([]);
@@ -108,7 +122,25 @@ const Settings = () => {
             fetchExpenseCategories();
         }
         if (activeTab === 'PHOTOS') fetchProducts();
+        if (activeTab === 'RESTAURANT') fetchSettings();
     }, [activeTab]);
+
+    useEffect(() => {
+        if (settings) {
+            setRestaurantForm({
+                name: settings.name || '',
+                address: settings.address || '',
+                phone: settings.phone || '',
+                gstin: settings.gstin || '',
+                gstRate: settings.gstRate ?? 5.0,
+                serviceChargeRate: settings.serviceChargeRate ?? 0,
+                parcelCharge: settings.parcelCharge ?? 0,
+                deliveryCharge: settings.deliveryCharge ?? 0,
+                printerSize: settings.printerSize || '80mm'
+            });
+        }
+    }, [settings]);
+
 
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -403,6 +435,13 @@ const Settings = () => {
                         <Printer size={18} />
                         <span>Printer Setup</span>
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('RESTAURANT')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'RESTAURANT' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        <Store size={18} />
+                        <span>Restaurant Profile</span>
+                    </button>
                 </div>
                 </div>
 
@@ -530,15 +569,17 @@ const Settings = () => {
                                                     {showNewUserPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                                 </button>
                                             </div>
-                                            <select 
-                                                className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-xs"
-                                                value={newUserForm.role}
-                                                onChange={e => setNewUserForm({...newUserForm, role: e.target.value})}
-                                            >
-                                                <option value="CASHIER">Cashier</option>
-                                                <option value="MANAGER">Manager</option>
-                                                <option value="ADMIN">Administrator</option>
-                                            </select>
+                                                <select 
+                                                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-xs"
+                                                    value={newUserForm.role}
+                                                    onChange={e => setNewUserForm({...newUserForm, role: e.target.value})}
+                                                >
+                                                    <option value="CASHIER">Cashier</option>
+                                                    <option value="MANAGER">Manager</option>
+                                                    <option value="ADMIN">Administrator</option>
+                                                    <option value="WAITER">Waiter</option>
+                                                    <option value="KITCHEN">Kitchen Staff</option>
+                                                </select>
 
                                             <div className="space-y-2">
                                                 <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Module Permissions</label>
@@ -657,6 +698,8 @@ const Settings = () => {
                                                             <option value="CASHIER" className="bg-slate-900">Cashier</option>
                                                             <option value="MANAGER" className="bg-slate-900">Manager</option>
                                                             <option value="ADMIN" className="bg-slate-900">Administrator</option>
+                                                            <option value="WAITER" className="bg-slate-900">Waiter</option>
+                                                            <option value="KITCHEN" className="bg-slate-900">Kitchen Staff</option>
                                                         </select>
                                                     </div>
                                                 </div>
@@ -1021,6 +1064,136 @@ const Settings = () => {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    ) : activeTab === 'RESTAURANT' ? (
+                        <div className="p-6 md:p-10 animate-in fade-in duration-300">
+                            <div className="flex items-center gap-4 mb-8">
+                                <div className="p-3 bg-brand-50 text-brand-600 rounded-2xl">
+                                    <Store size={24} />
+                                </div>
+                                <h2 className="text-xl md:text-2xl font-black text-slate-800">Restaurant Configuration</h2>
+                            </div>
+
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                setLoading(true);
+                                try {
+                                    await saveSettings(restaurantForm);
+                                    alert('Restaurant settings saved successfully!');
+                                } catch (err: any) {
+                                    alert(err.message || 'Failed to save settings');
+                                } finally {
+                                    setLoading(false);
+                                }
+                            }} className="space-y-6 max-w-2xl">
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block font-mono">Restaurant Name *</label>
+                                        <input 
+                                            type="text"
+                                            required
+                                            className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-brand-primary font-bold text-slate-800 outline-none"
+                                            value={restaurantForm.name}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, name: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block font-mono">Contact Phone *</label>
+                                        <input 
+                                            type="text"
+                                            required
+                                            className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-brand-primary font-bold text-slate-800 outline-none"
+                                            value={restaurantForm.phone}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, phone: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block font-mono">Address *</label>
+                                    <textarea 
+                                        required
+                                        className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-brand-primary font-bold text-slate-800 outline-none min-h-[80px]"
+                                        value={restaurantForm.address}
+                                        onChange={(e) => setRestaurantForm({...restaurantForm, address: e.target.value})}
+                                    />
+                                </div>
+
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block font-mono">GSTIN / Tax ID</label>
+                                        <input 
+                                            type="text"
+                                            className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-brand-primary font-bold text-slate-800 outline-none"
+                                            value={restaurantForm.gstin}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, gstin: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block font-mono">Default Printer Format</label>
+                                        <select
+                                            className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-brand-primary font-bold text-slate-800 outline-none"
+                                            value={restaurantForm.printerSize}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, printerSize: e.target.value})}
+                                        >
+                                            <option value="80mm">80mm (Standard Desktop)</option>
+                                            <option value="58mm">58mm (Handheld POS)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">GST Rate (%)</label>
+                                        <input 
+                                            type="number"
+                                            step="0.1"
+                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
+                                            value={restaurantForm.gstRate}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, gstRate: parseFloat(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Service Charge (%)</label>
+                                        <input 
+                                            type="number"
+                                            step="0.1"
+                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
+                                            value={restaurantForm.serviceChargeRate}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, serviceChargeRate: parseFloat(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Parcel Fee (Rs)</label>
+                                        <input 
+                                            type="number"
+                                            step="1"
+                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
+                                            value={restaurantForm.parcelCharge}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, parcelCharge: parseFloat(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Delivery Fee (Rs)</label>
+                                        <input 
+                                            type="number"
+                                            step="1"
+                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
+                                            value={restaurantForm.deliveryCharge}
+                                            onChange={(e) => setRestaurantForm({...restaurantForm, deliveryCharge: parseFloat(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-brand-primary hover:bg-brand-secondary text-white py-5 rounded-2xl font-black shadow-xl shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {loading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                                    <span>SAVE SETTINGS</span>
+                                </button>
+                            </form>
                         </div>
                     ) : null}
                 </div>

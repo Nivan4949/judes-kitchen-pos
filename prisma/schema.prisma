@@ -73,6 +73,16 @@ model Product {
   image          String?
   supplierId     String?        // New strict reference
   is_active      Boolean        @default(true)
+  
+  // Restaurant-specific fields
+  foodType       String?        @default("VEG") // VEG, NON-VEG, EGG
+  availability   Boolean        @default(true)
+  variants       Json?          // Array of {name: string, price: number}
+  addons         Json?          // Array of {name: string, price: number}
+  preparationTime Int?          @default(15)
+  kitchenDept    String?        @default("MAIN_KITCHEN")
+  recipe         Json?          // Array of {rawMaterialId: string, quantity: number}
+
   orderItems       OrderItem[]
   purchaseItems    PurchaseItem[]
   salesReturnItems    SalesReturnItem[]
@@ -168,6 +178,18 @@ model Order {
   paymentMode           String      
   orderType             String      @default("Walk-in")
   status                String      @default("COMPLETED")
+  
+  // Restaurant-specific fields
+  waiterName            String?
+  tableName             String?
+  tableId               String?
+  notes                 String?
+  serviceCharge         Float       @default(0)
+  parcelCharge          Float       @default(0)
+  deliveryCharge        Float       @default(0)
+  shiftId               String?
+  kotCount              Int         @default(0)
+
   orderItems            OrderItem[]
   payments              Payment[]
   salesReturns          SalesReturn[]
@@ -226,6 +248,11 @@ model OrderItem {
   discount   Float   @default(0)
   taxAmount Float
   total     Float
+
+  // Restaurant-specific fields
+  notes      String?
+  variant    String?
+  modifiers  Json?
 
   @@index([orderId])
   @@index([productId])
@@ -362,4 +389,143 @@ model UserActivity {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// RESTAURANT SPECIFIC MODELS
+
+model TableSection {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  tables    Table[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Table {
+  id                 String        @id @default(uuid())
+  number             String        @unique
+  capacity           Int
+  status             String        @default("FREE") // FREE, OCCUPIED, RESERVED, CLEANING, BILLING
+  sectionId          String?
+  section            TableSection? @relation(fields: [sectionId], references: [id])
+  currentOrderId     String?       // Reference to active running Order ID
+  runningOrderAmount Float         @default(0)
+  occupiedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model KOT {
+  id           String      @id @default(uuid())
+  kotNo        String      @unique
+  orderId      String?     // Associated running or completed Order ID
+  tableId      String?
+  tableName    String?
+  waiterName   String?
+  orderType    String      // Dine-in, Takeaway, Delivery, etc.
+  status       String      @default("PENDING") // PENDING, PREPARING, READY, SERVED, CANCELLED
+  items        KOTItem[]
+  reprintCount Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model KOTItem {
+  id           String      @id @default(uuid())
+  kotId        String
+  kot          KOT         @relation(fields: [kotId], references: [id], onDelete: Cascade)
+  productId    String
+  name         String
+  quantity     Float
+  notes        String?
+  variant      String?
+  modifiers    Json?       // Modifiers details: [{name: string, price: number}]
+  status       String      @default("PENDING") // PENDING, PREPARING, READY, SERVED, CANCELLED
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Shift {
+  id                  String    @id @default(uuid())
+  cashierId           String
+  cashierName         String
+  status              String    @default("OPEN") // OPEN, CLOSED
+  openingTime         DateTime  @default(now())
+  closingTime         DateTime?
+  openingCash         Float
+  cashSales           Float     @default(0)
+  upiSales            Float     @default(0)
+  cardSales           Float     @default(0)
+  creditSales         Float     @default(0)
+  expenses            Float     @default(0)
+  refunds             Float     @default(0)
+  discounts           Float     @default(0)
+  expectedClosingCash Float     @default(0)
+  actualClosingCash   Float?
+  differenceAmount    Float?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model RestaurantSettings {
+  id                 String   @id @default("settings")
+  name               String   @default("JUDE'S KITCHEN")
+  logo               String?
+  address            String   @default("Kodassery, Malappuram")
+  phone              String   @default("8606391315")
+  gstin              String?
+  currency           String   @default("INR")
+  gstRate            Float    @default(0)
+  serviceChargeRate  Float    @default(0)
+  parcelCharge       Float    @default(0)
+  deliveryCharge     Float    @default(0)
+  printerSize        String   @default("80mm") // 58mm, 80mm
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model RawMaterial {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  unit              String   // kg, gram, litre, ml, pcs
+  stockQuantity     Float    @default(0)
+  lowStockThreshold Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  purchases         RawMaterialPurchaseItem[]
+  wastage           WastageEntry[]
+}
+
+model RawMaterialPurchase {
+  id           String   @id @default(uuid())
+  invoiceNo    String   @unique
+  supplierName String?
+  totalAmount  Float
+  date         DateTime @default(now())
+  items        RawMaterialPurchaseItem[]
+  createdAt    DateTime @default(now())
+}
+
+model RawMaterialPurchaseItem {
+  id              String             @id @default(uuid())
+  purchaseId      String
+  purchase        RawMaterialPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  rawMaterialId   String
+  rawMaterialName String
+  quantity        Float
+  price           Float
+  total           Float
+  rawMaterial     RawMaterial        @relation(fields: [rawMaterialId], references: [id])
+}
+
+model WastageEntry {
+  id              String      @id @default(uuid())
+  rawMaterialId   String
+  rawMaterialName String
+  quantity        Float
+  reason          String?
+  date            DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  rawMaterial     RawMaterial @relation(fields: [rawMaterialId], references: [id])
 }

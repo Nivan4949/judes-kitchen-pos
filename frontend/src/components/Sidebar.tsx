@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingBag, Package, BarChart3, Key, Smartphone, Settings, LogOut, Menu, X, Plus, Users, TrendingDown, Truck, ShoppingCart, Clock } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Package, BarChart3, Key, Smartphone, Settings, LogOut, Menu, X, Plus, Users, TrendingDown, Truck, ShoppingCart, Clock, LayoutGrid, ChefHat, Coins } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
 const Sidebar = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
@@ -8,7 +8,11 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) 
   const logout = useAuthStore((state: any) => state.logout);
 
   const menuItems = [
-    { icon: <ShoppingBag size={22} />, label: 'POS Billing', path: '/', roles: ['ADMIN', 'MANAGER', 'CASHIER'], permissionKey: 'POS' },
+    { icon: <ShoppingBag size={22} />, label: 'POS Billing', path: '/', roles: ['ADMIN', 'MANAGER', 'CASHIER', 'WAITER'], permissionKey: 'POS' },
+    { icon: <LayoutGrid size={22} />, label: 'Table Floor', path: '/tables', roles: ['ADMIN', 'MANAGER', 'CASHIER', 'WAITER'], permissionKey: 'TABLES' },
+    { icon: <ChefHat size={22} />, label: 'Kitchen KDS', path: '/kitchen', roles: ['ADMIN', 'MANAGER', 'KITCHEN'], permissionKey: 'KITCHEN' },
+    { icon: <Coins size={22} />, label: 'Shift Drawer', path: '/shift-drawer', roles: ['ADMIN', 'MANAGER', 'CASHIER'], permissionKey: 'SHIFT' },
+    { icon: <Package size={22} />, label: 'Recipe Matrix', path: '/recipes', roles: ['ADMIN', 'MANAGER'], permissionKey: 'RECIPES' },
     { icon: <LayoutDashboard size={22} />, label: 'Cloud Dashboard', path: '/admin/dashboard', roles: ['ADMIN'], permissionKey: 'DASHBOARD' },
     { icon: <Package size={22} />, label: 'Inventory Management', path: '/inventory', roles: ['ADMIN', 'MANAGER'], permissionKey: 'INVENTORY' },
     { icon: <Package size={22} />, label: 'Stock Procurement', path: '/stock-procurement', roles: ['ADMIN', 'MANAGER'], permissionKey: 'PROCUREMENT' },

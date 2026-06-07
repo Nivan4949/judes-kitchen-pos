@@ -99,12 +99,18 @@ router.get('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
 });
 
 // Create new order
-router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
+router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, res) => {
   console.log(`[Order API] Starting creation with ${req.body.orderItems?.length} items`);
   const startTime = Date.now();
 
   try {
-    const { id, invoiceNo: clientInvoiceNo, customerId, orderItems, subtotal, discount, manualDiscount, taxTotal, grandTotal, roundedTotal, savings, amountPaid, balance, paymentMode, orderType, loyaltyPointsRedeemed = 0 } = req.body;
+    const { 
+      id, invoiceNo: clientInvoiceNo, customerId, orderItems, subtotal, 
+      discount, manualDiscount, taxTotal, grandTotal, roundedTotal, savings, 
+      amountPaid, balance, paymentMode, orderType, loyaltyPointsRedeemed = 0,
+      waiterName, tableName, tableId, notes, serviceCharge = 0, parcelCharge = 0, 
+      deliveryCharge = 0, shiftId, kotCount = 0, status
+    } = req.body;
 
     if (!orderItems || orderItems.length === 0) {
       return res.status(400).json({ error: 'Order must contain at least one item.' });
@@ -155,6 +161,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
       // 4. Create Order + Items + Payment in ONE nested call
       const earnRate = 100;
       const loyaltyPointsEarned = Math.floor(grandTotal / earnRate);
+      const isPaid = (status === 'COMPLETED' || amountPaid >= grandTotal || balance <= 0);
 
       const orderBaseData = {
         id: id || undefined, // Respect the Client's Optimistic ID
@@ -172,8 +179,17 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         orderType: orderType || 'Walk-in',
         loyaltyPointsEarned,
         loyaltyPointsRedeemed,
-        status: 'COMPLETED',
+        status: status || (isPaid ? 'COMPLETED' : 'PENDING'),
         creatorId: req.user?.id || null,
+        waiterName: waiterName || null,
+        tableName: tableName || null,
+        tableId: tableId || null,
+        notes: notes || null,
+        serviceCharge: Number(serviceCharge) || 0,
+        parcelCharge: Number(parcelCharge) || 0,
+        deliveryCharge: Number(deliveryCharge) || 0,
+        shiftId: shiftId || null,
+        kotCount: Number(kotCount) || 0,
         orderItems: {
           create: orderItems.map((item) => {
             const pid = item.productId || item.id;
@@ -189,31 +205,38 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
               mrp: mrp,
               discount: item.discount || 0,
               taxAmount: (price * (gst / 100)) * item.quantity,
-              total: (price * item.quantity) + ((price * (gst / 100)) * item.quantity)
+              total: (price * item.quantity) + ((price * (gst / 100)) * item.quantity),
+              notes: item.notes || null,
+              variant: item.variant || null,
+              modifiers: item.modifiers || null
             };
           })
-        },
-        payments: {
+        }
+      };
+
+      // Create payment record if payment was actually made
+      if (amountPaid > 0) {
+        orderBaseData.payments = {
           create: {
             method: paymentMode,
             amount: Number(amountPaid) || 0,
             status: 'SUCCESS'
           }
-        }
-      };
+        };
+      }
 
       const newOrder = await tx.order.create({
         data: orderBaseData,
         include: { orderItems: { include: { product: true } }, payments: true }
       });
 
-      // 5. Sequential Sledgehammer Stock Updates (Guaranteed execution via Direct SQL)
-      // This bypasses Prisma caching/relation bottlenecks
+      // 5. Stock Updates & Recipe deductions
       for (const item of orderItems) {
         const pid = item.productId || item.id;
         const qty = Number(item.quantity) || 0;
-        
-        // Decrement Product Stock via Raw SQL for maximum reliability
+        const p = productMap.get(pid);
+
+        // Decrement Product Stock
         await tx.$executeRaw`
           UPDATE "Product" 
           SET "stockQuantity" = "stockQuantity" - ${qty} 
@@ -229,9 +252,53 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
             reason: `Order ${invoiceNo}`
           }
         });
+
+        // Recipe Deductions (Raw materials)
+        if (p && p.recipe && Array.isArray(p.recipe)) {
+          for (const ingredient of p.recipe) {
+            const rawId = ingredient.rawMaterialId;
+            const ingredientQty = Number(ingredient.quantity) || 0;
+            const totalDeduct = ingredientQty * qty;
+            if (rawId && totalDeduct > 0) {
+              await tx.rawMaterial.update({
+                where: { id: rawId },
+                data: {
+                  stockQuantity: { decrement: totalDeduct }
+                }
+              });
+            }
+          }
+        }
       }
 
-      // 6. Record Staff Activity for the Sale
+      // 6. Manage Dining Table Status
+      if (tableId && orderType === 'Dine-in') {
+        if (isPaid) {
+          // Free table since it is paid
+          await tx.table.update({
+            where: { id: tableId },
+            data: {
+              status: 'FREE',
+              currentOrderId: null,
+              runningOrderAmount: 0,
+              occupiedAt: null
+            }
+          });
+        } else {
+          // Table occupied with active running order
+          await tx.table.update({
+            where: { id: tableId },
+            data: {
+              status: 'OCCUPIED',
+              currentOrderId: newOrder.id,
+              runningOrderAmount: grandTotal,
+              occupiedAt: new Date()
+            }
+          });
+        }
+      }
+
+      // 7. Record Staff Activity
       if (req.user?.id) {
         await tx.userActivity.create({
           data: {
@@ -241,6 +308,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         });
       }
 
+      // 8. Update Customer Loyalty & Credit Balances
       if (customerId) {
         await tx.customer.update({
           where: { id: customerId },
@@ -253,19 +321,16 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         });
       }
 
-      // 7. Auto-log Manual Discount as Expense
+      // 9. Auto-log Manual Discount as Expense
       if (manualDiscount && manualDiscount > 0) {
-        // Find or create 'Discount' Category
         let discountCat = await tx.expenseCategory.findUnique({
           where: { name: 'Discount' }
         });
-        
         if (!discountCat) {
           discountCat = await tx.expenseCategory.create({
             data: { name: 'Discount' }
           });
         }
-        
         await tx.expense.create({
           data: {
             type: 'Discount',
@@ -275,7 +340,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         });
       }
 
-      // 8. Socket Events (Optional Emit)
+      // 10. Socket Events
       const io = req.app.get('io');
       if (io) {
         io.emit('INVENTORY_UPDATE', { items: orderItems });
@@ -283,14 +348,10 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
       }
 
       return newOrder;
-    }, { timeout: 15000 }); // Increase transaction timeout for large orders
+    }, { timeout: 15000 });
 
     console.log(`[Order API] Success! Processed in ${Date.now() - startTime}ms`);
-
     res.json(order);
-    
-    // Note: WhatsApp messaging has been decoupled. The frontend now independently 
-    // triggers the /share-whatsapp endpoint asynchronously after the UI seamlessly transitions.
   } catch (error) {
     const elapsed = Date.now() - startTime;
     console.error(`[Order API] FAILED after ${elapsed}ms:`, error);
@@ -302,11 +363,16 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
 });
 
 // Update existing order (Full edit with inventory reversal)
-router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
   const startTime = Date.now();
   try {
     const { id } = req.params;
-    const { orderItems: newItems, subtotal, discount, taxTotal, grandTotal, amountPaid, balance, paymentMode, customerId } = req.body;
+    const { 
+      orderItems: newItems, subtotal, discount, taxTotal, grandTotal, 
+      amountPaid, balance, paymentMode, customerId, status,
+      waiterName, tableName, tableId, notes, serviceCharge = 0,
+      parcelCharge = 0, deliveryCharge = 0, shiftId, kotCount = 0
+    } = req.body;
 
     const updatedOrder = await prisma.$transaction(async (tx) => {
       // 1. Fetch old order with items
@@ -353,6 +419,22 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
             reason: `Edit Reverse: ${oldOrder.invoiceNo}`
           }
         });
+
+        // Reverse raw material recipe stock
+        const p = productMap.get(item.productId);
+        if (p && p.recipe && Array.isArray(p.recipe)) {
+          for (const ingredient of p.recipe) {
+            const rawId = ingredient.rawMaterialId;
+            const ingredientQty = Number(ingredient.quantity) || 0;
+            const totalReverse = ingredientQty * item.quantity;
+            if (rawId && totalReverse > 0) {
+              await tx.rawMaterial.update({
+                where: { id: rawId },
+                data: { stockQuantity: { increment: totalReverse } }
+              });
+            }
+          }
+        }
       }
 
       // 5. APPLY: Delete old mapping and prepare new
@@ -361,6 +443,7 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
 
       const earnRate = 100;
       const newLoyaltyPointsEarned = Math.floor(grandTotal / earnRate);
+      const isPaid = (status === 'COMPLETED' || amountPaid >= grandTotal || balance <= 0);
 
       // Re-apply new items
       for (const item of newItems) {
@@ -381,6 +464,21 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
             reason: `Edit Apply: ${oldOrder.invoiceNo}`
           }
         });
+
+        // Deduct raw material recipe stock
+        if (p.recipe && Array.isArray(p.recipe)) {
+          for (const ingredient of p.recipe) {
+            const rawId = ingredient.rawMaterialId;
+            const ingredientQty = Number(ingredient.quantity) || 0;
+            const totalDeduct = ingredientQty * item.quantity;
+            if (rawId && totalDeduct > 0) {
+              await tx.rawMaterial.update({
+                where: { id: rawId },
+                data: { stockQuantity: { decrement: totalDeduct } }
+              });
+            }
+          }
+        }
       }
 
       // 6. Final Record Update
@@ -396,6 +494,16 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
           balance: Number(balance) || 0,
           paymentMode,
           loyaltyPointsEarned: newLoyaltyPointsEarned,
+          status: status || (isPaid ? 'COMPLETED' : 'PENDING'),
+          waiterName: waiterName || null,
+          tableName: tableName || null,
+          tableId: tableId || null,
+          notes: notes || null,
+          serviceCharge: Number(serviceCharge) || 0,
+          parcelCharge: Number(parcelCharge) || 0,
+          deliveryCharge: Number(deliveryCharge) || 0,
+          shiftId: shiftId || null,
+          kotCount: Number(kotCount) || 0,
           orderItems: {
             create: newItems.map((item) => {
               const pid = item.productId || item.id;
@@ -408,7 +516,10 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
                 price: price,
                 discount: item.discount || 0,
                 taxAmount: (price * (gst / 100)) * item.quantity,
-                total: (price * item.quantity) + ((price * (gst / 100)) * item.quantity)
+                total: (price * item.quantity) + ((price * (gst / 100)) * item.quantity),
+                notes: item.notes || null,
+                variant: item.variant || null,
+                modifiers: item.modifiers || null
               };
             })
           },
@@ -422,6 +533,30 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         },
         include: { orderItems: { include: { product: true } }, payments: true }
       });
+
+      // 7. Manage Dining Table Status
+      if (tableId && oldOrder.orderType === 'Dine-in') {
+        if (isPaid) {
+          // Free table since it is paid
+          await tx.table.update({
+            where: { id: tableId },
+            data: {
+              status: 'FREE',
+              currentOrderId: null,
+              runningOrderAmount: 0,
+              occupiedAt: null
+            }
+          });
+        } else {
+          // Table remains occupied, update active bill amount
+          await tx.table.update({
+            where: { id: tableId },
+            data: {
+              runningOrderAmount: grandTotal
+            }
+          });
+        }
+      }
 
       // 7. Update new customer loyalty
       if (customerId) {
@@ -584,8 +719,15 @@ router.delete('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         await tx.customer.update({ where: { id: oldOrder.customerId }, data: customerUpdateData });
       }
 
-      // 4. REVERSE: Order Items Stock
-      console.log(`[Order API] Step 4: Reversing Stock`);
+      // 4. REVERSE: Order Items Stock & Recipes
+      console.log(`[Order API] Step 4: Reversing Stock & Recipes`);
+      
+      const productIds = oldOrder.orderItems.map(i => i.productId);
+      const productsFromDb = await tx.product.findMany({
+        where: { id: { in: productIds } }
+      });
+      const productMap = new Map(productsFromDb.map(p => [p.id, p]));
+
       const itemOps = oldOrder.orderItems.map(item => {
         if (!item.productId) return null;
         return [
@@ -604,6 +746,37 @@ router.delete('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         ];
       }).flat().filter(Boolean);
       await Promise.all(itemOps);
+
+      // Reverse raw material recipe stocks
+      for (const item of oldOrder.orderItems) {
+        const p = productMap.get(item.productId);
+        if (p && p.recipe && Array.isArray(p.recipe)) {
+          for (const ingredient of p.recipe) {
+            const rawId = ingredient.rawMaterialId;
+            const ingredientQty = Number(ingredient.quantity) || 0;
+            const totalReverse = ingredientQty * item.quantity;
+            if (rawId && totalReverse > 0) {
+              await tx.rawMaterial.update({
+                where: { id: rawId },
+                data: { stockQuantity: { increment: totalReverse } }
+              });
+            }
+          }
+        }
+      }
+
+      // Free dining table if dine-in
+      if (oldOrder.tableId && oldOrder.orderType === 'Dine-in') {
+        await tx.table.update({
+          where: { id: oldOrder.tableId },
+          data: {
+            status: 'FREE',
+            currentOrderId: null,
+            runningOrderAmount: 0,
+            occupiedAt: null
+          }
+        });
+      }
 
       // 5. CLEANUP: Expenses
       console.log(`[Order API] Step 5: Cleaning Expenses`);

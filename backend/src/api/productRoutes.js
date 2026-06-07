@@ -37,7 +37,8 @@ router.post('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     const {
       name, barcode, categoryId, brand, purchasePrice, 
       sellingPrice, mrp, gstRate, stockQuantity, unit, supplier, 
-      image, is_active
+      image, is_active,
+      foodType, availability, variants, addons, preparationTime, kitchenDept, recipe
     } = req.body;
 
     let finalBarcode = barcode;
@@ -59,7 +60,14 @@ router.post('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         supplier,
         image,
         is_active: is_active ?? true,
-        categoryId: categoryId || null
+        categoryId: categoryId || null,
+        foodType: foodType || 'VEG',
+        availability: availability !== undefined ? Boolean(availability) : true,
+        variants: variants || null,
+        addons: addons || null,
+        preparationTime: preparationTime !== undefined ? parseInt(preparationTime) : 15,
+        kitchenDept: kitchenDept || 'MAIN_KITCHEN',
+        recipe: recipe || null
       }
     });
     res.json(product);
@@ -76,7 +84,8 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     const {
       name, barcode, categoryId, brand, purchasePrice, 
       sellingPrice, mrp, gstRate, stockQuantity, unit, supplier, 
-      image, is_active
+      image, is_active,
+      foodType, availability, variants, addons, preparationTime, kitchenDept, recipe
     } = req.body;
 
     const updateData = {
@@ -91,7 +100,14 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
       supplier,
       image,
       is_active: is_active ?? true,
-      categoryId: categoryId || null
+      categoryId: categoryId || null,
+      foodType: foodType !== undefined ? foodType : undefined,
+      availability: availability !== undefined ? Boolean(availability) : undefined,
+      variants: variants !== undefined ? variants : undefined,
+      addons: addons !== undefined ? addons : undefined,
+      preparationTime: preparationTime !== undefined ? parseInt(preparationTime) : undefined,
+      kitchenDept: kitchenDept !== undefined ? kitchenDept : undefined,
+      recipe: recipe !== undefined ? recipe : undefined
     };
 
     // Handle barcode specifically

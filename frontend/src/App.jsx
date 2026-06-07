@@ -23,6 +23,12 @@ import PurchaseOrders from './pages/Inventory/PurchaseOrders';
 import AccountsPayable from './pages/AP/AccountsPayable';
 import APLedgerView from './pages/AP/components/APLedgerView';
 
+// New Restaurant Imports
+import TableManagement from './pages/Tables/TableManagement';
+import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
+import ShiftClosing from './pages/Shifts/ShiftClosing';
+import RecipeManagement from './pages/Inventory/RecipeManagement';
+
 function App() {
   const token = useAuthStore((state) => state.token);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -51,6 +57,10 @@ function App() {
           {/* Protected Routes */}
           <Route element={<PrivateRoute />}>
             <Route path="/" element={<POSInterface />} />
+            <Route path="/tables" element={<TableManagement />} />
+            <Route path="/kitchen" element={<KitchenDisplay />} />
+            <Route path="/shift-drawer" element={<ShiftClosing />} />
+            <Route path="/recipes" element={<RecipeManagement />} />
             <Route path="/inventory" element={<ProductManagement />} />
             <Route path="/stock-procurement" element={<StockEntry />} />
             <Route path="/sales-return" element={<SalesReturn />} />

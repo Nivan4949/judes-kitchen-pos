@@ -51,10 +51,23 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
       
       const itemsHtml = (order.orderItems || []).map((item: any, index: number) => {
         const itemName = item.product?.name || item.name || 'Product';
+        const variantSuffix = item.variant ? ` (${item.variant})` : '';
+        let modifiersHtml = '';
+        if (item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+          modifiersHtml = item.modifiers.map((m: any) => `<div style="font-size: 9px; font-weight: normal; color: #555; padding-left: 5px;">+ ${m.name} (+₹${Number(m.price).toFixed(2)})</div>`).join('');
+        }
+        let notesHtml = '';
+        if (item.notes) {
+          notesHtml = `<div style="font-size: 9px; font-weight: normal; color: #e65100; padding-left: 5px;">* Note: ${item.notes}</div>`;
+        }
         return `
         <tr>
           <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; vertical-align: top;">${item.slNo || index + 1}</td>
-          <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-weight: bold; text-transform: uppercase; word-break: break-word; max-width: 120px; vertical-align: top;">${itemName}</td>
+          <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-weight: bold; text-transform: uppercase; word-break: break-word; max-width: 120px; vertical-align: top;">
+            ${itemName}${variantSuffix}
+            ${modifiersHtml}
+            ${notesHtml}
+          </td>
           <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; text-align: right; vertical-align: top;">${(Number(item.quantity) || 0).toFixed(0)}</td>
           <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; text-align: right; padding-right: 8px; vertical-align: top;">${(Number(item.price) || 0).toFixed(2)}</td>
           <td style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; text-align: right; padding-right: 8px; vertical-align: top;">${(Number(item.mrp || item.product?.mrp || item.price || 0)).toFixed(0)}</td>
@@ -107,6 +120,8 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
               <div class="total-row"><span>Cust : ${order.customer?.name || order.customerName || 'Walk-in'}</span></div>
               <div class="total-row"><span>Type : ${order.orderType || 'Walk-in'}</span></div>
               <div class="total-row"><span>Invoice : ${order.invoiceNo}</span></div>
+              ${order.tableName ? `<div class="total-row"><span>Table : ${order.tableName}</span></div>` : ''}
+              ${order.waiterName ? `<div class="total-row"><span>Waiter : ${order.waiterName}</span></div>` : ''}
             </div>
             <table>
               <thead>
@@ -135,6 +150,24 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                 <span>Discount :</span>
                 <span>${(Number(order.discount) || 0).toFixed(2)}</span>
               </div>
+              ${Number(order.serviceCharge) > 0 ? `
+              <div class="total-row">
+                <span></span>
+                <span>Service Charge :</span>
+                <span>${Number(order.serviceCharge).toFixed(2)}</span>
+              </div>` : ''}
+              ${Number(order.parcelCharge) > 0 ? `
+              <div class="total-row">
+                <span></span>
+                <span>Parcel Charge :</span>
+                <span>${Number(order.parcelCharge).toFixed(2)}</span>
+              </div>` : ''}
+              ${Number(order.deliveryCharge) > 0 ? `
+              <div class="total-row">
+                <span></span>
+                <span>Delivery Charge :</span>
+                <span>${Number(order.deliveryCharge).toFixed(2)}</span>
+              </div>` : ''}
               <div class="total-row">
                 <span></span>
                 <span>Return :</span>
@@ -259,6 +292,18 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                 <span>Type :</span>
                 <span className="font-bold text-orange-600 uppercase text-[9.5px] tracking-tight">{order.orderType || 'Walk-in'}</span>
               </div>
+              {order.tableName && (
+                <div className="flex justify-between">
+                  <span>Table :</span>
+                  <span className="font-bold">{order.tableName}</span>
+                </div>
+              )}
+              {order.waiterName && (
+                <div className="flex justify-between">
+                  <span>Waiter :</span>
+                  <span className="font-bold">{order.waiterName}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Invoice :</span>
                 <span className="font-bold">{order.invoiceNo}</span>
@@ -280,7 +325,18 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                 {order.orderItems?.map((item: any, idx: number) => (
                   <tr key={item.id || idx} className="text-[10px] border-b border-slate-50">
                     <td className="py-2 align-top">{item.slNo || idx + 1}</td>
-                    <td className="py-2 font-bold uppercase break-words whitespace-normal max-w-[120px] align-top">{item.product?.name || item.name}</td>
+                    <td className="py-2 font-bold uppercase break-words whitespace-normal max-w-[120px] align-top">
+                      {item.product?.name || item.name}
+                      {item.variant && <span className="text-[9px] text-slate-500 block font-normal">({item.variant})</span>}
+                      {item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0 && (
+                        <div className="text-[8.5px] text-slate-500 font-normal pl-2">
+                          {item.modifiers.map((m: any, mIdx: number) => (
+                            <div key={mIdx}>+ {m.name} (+₹{Number(m.price).toFixed(2)})</div>
+                          ))}
+                        </div>
+                      )}
+                      {item.notes && <div className="text-[8.5px] text-orange-600 font-normal pl-2">* Note: {item.notes}</div>}
+                    </td>
                     <td className="py-2 text-right align-top">{(Number(item.quantity) || 0).toFixed(0)}</td>
                     <td className="py-2 text-right pr-2 align-top">{(Number(item.price) || 0).toFixed(2)}</td>
                     <td className="py-2 text-right pr-2 align-top">{(Number(item.mrp || item.product?.mrp || item.price || 0)).toFixed(0)}</td>
@@ -291,20 +347,26 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
             </table>
 
             <div className="border-t border-dashed border-slate-300 pt-3 space-y-1">
-              <div className="flex justify-between">
+              <div className="flex justify-between flex-wrap">
                  <div className="flex flex-col gap-1">
                    <span>Total Items : {order.itemsCount || 1}</span>
                    <span>Total Qty : {(Number(order.totalQty) || 0).toFixed(0)}</span>
                  </div>
                  <div className="flex gap-4 text-right">
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1 text-slate-500">
                       <p>Total :</p>
                       <p>Discount :</p>
+                      {Number(order.serviceCharge) > 0 && <p>Service Charge :</p>}
+                      {Number(order.parcelCharge) > 0 && <p>Parcel Charge :</p>}
+                      {Number(order.deliveryCharge) > 0 && <p>Delivery Charge :</p>}
                       <p>Return :</p>
                     </div>
                     <div className="flex flex-col gap-1 font-bold">
                       <p>{(Number(order.subtotal) || 0).toFixed(2)}</p>
                       <p>{(Number(order.discount) || 0).toFixed(2)}</p>
+                      {Number(order.serviceCharge) > 0 && <p>{Number(order.serviceCharge).toFixed(2)}</p>}
+                      {Number(order.parcelCharge) > 0 && <p>{Number(order.parcelCharge).toFixed(2)}</p>}
+                      {Number(order.deliveryCharge) > 0 && <p>{Number(order.deliveryCharge).toFixed(2)}</p>}
                       <p>0.00</p>
                     </div>
                  </div>
