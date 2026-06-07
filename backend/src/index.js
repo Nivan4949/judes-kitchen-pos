@@ -242,10 +242,12 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+  const dbUrl = process.env.DATABASE_URL || '';
+  const maskedDbUrl = dbUrl.replace(/:([^:@]+)@/, ':****@');
   res.json({ 
     status: 'ok', 
     message: 'API with prefix is active',
-    dbUrl: process.env.DATABASE_URL
+    dbUrl: maskedDbUrl
   });
 });
 
