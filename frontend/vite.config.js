@@ -8,7 +8,7 @@ export default defineConfig({
       VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg', 'icons/*.png'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg', 'icons/*.png', 'logo.png'],
       manifest: {
         name: "Jude's Kitchen POS",
         short_name: 'JudesKitchen',
