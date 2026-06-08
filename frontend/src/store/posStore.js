@@ -17,7 +17,6 @@ const usePOSStore = create(
       tableName: '',
       tableId: '',
       notes: '',
-      serviceCharge: 0,
       parcelCharge: 0,
       deliveryCharge: 0,
       
@@ -31,7 +30,6 @@ const usePOSStore = create(
       setOrderType: (orderType) => set({ 
         orderType,
         // Clear irrelevant charges
-        serviceCharge: orderType === 'Dine-in' ? get().serviceCharge : 0,
         parcelCharge: orderType === 'Takeaway' ? get().parcelCharge : 0,
         deliveryCharge: orderType === 'Delivery' ? get().deliveryCharge : 0
       }),
@@ -43,7 +41,6 @@ const usePOSStore = create(
       setNotes: (notes) => set({ notes }),
 
       setCharges: (charges) => set((state) => ({
-        serviceCharge: charges.serviceCharge !== undefined ? charges.serviceCharge : state.serviceCharge,
         parcelCharge: charges.parcelCharge !== undefined ? charges.parcelCharge : state.parcelCharge,
         deliveryCharge: charges.deliveryCharge !== undefined ? charges.deliveryCharge : state.deliveryCharge
       })),
@@ -149,7 +146,6 @@ const usePOSStore = create(
         tableName: '',
         tableId: '',
         notes: '',
-        serviceCharge: 0,
         parcelCharge: 0,
         deliveryCharge: 0
       }),
@@ -172,7 +168,6 @@ const usePOSStore = create(
           tableId: state.tableId,
           cart: state.cart,
           customer: state.customer,
-          serviceCharge: state.serviceCharge,
           parcelCharge: state.parcelCharge,
           deliveryCharge: state.deliveryCharge,
           notes: state.notes,
@@ -193,7 +188,6 @@ const usePOSStore = create(
           tableName: '',
           tableId: '',
           notes: '',
-          serviceCharge: 0,
           parcelCharge: 0,
           deliveryCharge: 0
         };
@@ -211,7 +205,6 @@ const usePOSStore = create(
           tableName: order.tableName,
           tableId: order.tableId,
           customer: order.customer,
-          serviceCharge: order.serviceCharge,
           parcelCharge: order.parcelCharge,
           deliveryCharge: order.deliveryCharge,
           notes: order.notes,
@@ -258,7 +251,6 @@ const usePOSStore = create(
           tableName: order.tableName || '',
           tableId: order.tableId || '',
           notes: order.notes || '',
-          serviceCharge: order.serviceCharge || 0,
           parcelCharge: order.parcelCharge || 0,
           deliveryCharge: order.deliveryCharge || 0,
           customer: order.customer || null,
@@ -269,8 +261,8 @@ const usePOSStore = create(
       },
 
       getTotals: () => {
-        const { cart, loyaltyDiscount, manualDiscount, serviceCharge, parcelCharge, deliveryCharge } = get();
-        if (!cart) return { subtotal: 0, taxTotal: 0, grandTotal: 0, loyaltyDiscount: 0, manualDiscount: 0, serviceCharge: 0, parcelCharge: 0, deliveryCharge: 0 };
+        const { cart, loyaltyDiscount, manualDiscount, parcelCharge, deliveryCharge } = get();
+        if (!cart) return { subtotal: 0, taxTotal: 0, grandTotal: 0, loyaltyDiscount: 0, manualDiscount: 0, parcelCharge: 0, deliveryCharge: 0 };
         
         const subtotal = cart.reduce(
           (acc, item) => acc + (item.sellingPrice + (item.modifiersPrice || 0)) * (item.quantity || 0),
@@ -285,10 +277,10 @@ const usePOSStore = create(
           0
         );
         
-        const grandTotal = Math.max(0, subtotal + taxTotal + serviceCharge + parcelCharge + deliveryCharge - (loyaltyDiscount || 0) - (manualDiscount || 0));
+        const grandTotal = Math.max(0, subtotal + taxTotal + parcelCharge + deliveryCharge - (loyaltyDiscount || 0) - (manualDiscount || 0));
         const roundedTotal = Math.floor(grandTotal);
         
-        return { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal, roundedTotal, loyaltyDiscount, manualDiscount, savings };
+        return { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal, roundedTotal, loyaltyDiscount, manualDiscount, savings };
       },
     }),
     {

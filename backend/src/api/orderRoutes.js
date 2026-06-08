@@ -108,7 +108,7 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
       id, invoiceNo: clientInvoiceNo, customerId, orderItems, subtotal, 
       discount, manualDiscount, taxTotal, grandTotal, roundedTotal, savings, 
       amountPaid, balance, paymentMode, orderType, loyaltyPointsRedeemed = 0,
-      waiterName, tableName, tableId, notes, serviceCharge = 0, parcelCharge = 0, 
+      waiterName, tableName, tableId, notes, parcelCharge = 0, 
       deliveryCharge = 0, shiftId, kotCount = 0, status
     } = req.body;
 
@@ -185,7 +185,6 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
         tableName: tableName || null,
         tableId: tableId || null,
         notes: notes || null,
-        serviceCharge: Number(serviceCharge) || 0,
         parcelCharge: Number(parcelCharge) || 0,
         deliveryCharge: Number(deliveryCharge) || 0,
         shiftId: shiftId || null,
@@ -370,7 +369,7 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
     const { 
       orderItems: newItems, subtotal, discount, taxTotal, grandTotal, 
       amountPaid, balance, paymentMode, customerId, status,
-      waiterName, tableName, tableId, notes, serviceCharge = 0,
+      waiterName, tableName, tableId, notes, 
       parcelCharge = 0, deliveryCharge = 0, shiftId, kotCount = 0
     } = req.body;
 
@@ -499,7 +498,6 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
           tableName: tableName || null,
           tableId: tableId || null,
           notes: notes || null,
-          serviceCharge: Number(serviceCharge) || 0,
           parcelCharge: Number(parcelCharge) || 0,
           deliveryCharge: Number(deliveryCharge) || 0,
           shiftId: shiftId || null,

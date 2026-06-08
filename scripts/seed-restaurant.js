@@ -15,7 +15,6 @@ async function main() {
       gstin: "32AAAAA0000A1Z5",
       currency: "INR",
       gstRate: 5.0,
-      serviceChargeRate: 5.0,
       parcelCharge: 10.0,
       deliveryCharge: 30.0,
       printerSize: "80mm"
@@ -28,7 +27,6 @@ async function main() {
       gstin: "32AAAAA0000A1Z5",
       currency: "INR",
       gstRate: 5.0,
-      serviceChargeRate: 5.0,
       parcelCharge: 10.0,
       deliveryCharge: 30.0,
       printerSize: "80mm"

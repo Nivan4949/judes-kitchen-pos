@@ -321,21 +321,16 @@ const POSInterface: React.FC = () => {
     if (!settings) return;
     
     const { subtotal } = getTotals();
-    let serviceCharge = 0;
     let parcelCharge = 0;
     let deliveryCharge = 0;
 
-    if (orderType === 'Dine-in') {
-      const rate = settings.serviceChargeRate || 0;
-      serviceCharge = (subtotal * rate) / 100;
-    } else if (orderType === 'Takeaway') {
+    if (orderType === 'Takeaway') {
       parcelCharge = settings.parcelCharge || 0;
     } else if (orderType === 'Delivery') {
       deliveryCharge = settings.deliveryCharge || 0;
     }
 
     usePOSStore.getState().setCharges({
-      serviceCharge,
       parcelCharge,
       deliveryCharge
     });
@@ -431,7 +426,7 @@ const POSInterface: React.FC = () => {
     }
 
     const totals = getTotals();
-    const { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
+    const { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
 
     // DETECT NEXT SEQUENTIAL INVOICE NO - Optimized to avoid reading all orders
     let nextInvoiceNo = localStorage.getItem('last_invoice_no') || '100';
@@ -487,7 +482,6 @@ const POSInterface: React.FC = () => {
       tableName: tableName || null,
       tableId: tableId || null,
       notes: notes || null,
-      serviceCharge: serviceCharge,
       parcelCharge: parcelCharge,
       deliveryCharge: deliveryCharge,
       isSyncing: true // Visual flag for the receipt
@@ -636,7 +630,6 @@ const POSInterface: React.FC = () => {
         tableName,
         tableId,
         notes: notes || null,
-        serviceCharge: totals.serviceCharge,
         parcelCharge: totals.parcelCharge,
         deliveryCharge: totals.deliveryCharge,
         shiftId: activeShift?.id || null,
@@ -693,7 +686,7 @@ const POSInterface: React.FC = () => {
     }
   };
 
-  const { subtotal, taxTotal, serviceCharge, parcelCharge, deliveryCharge, grandTotal } = getTotals();
+  const { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal } = getTotals();
 
   return (
     <div className="flex flex-col h-full bg-slate-100 font-sans text-slate-800 overflow-hidden relative">
@@ -1077,12 +1070,6 @@ const POSInterface: React.FC = () => {
                 <span>Subtotal</span>
                 <span>₹{subtotal.toFixed(2)}</span>
               </div>
-              {serviceCharge > 0 && (
-                <div className="flex justify-between text-xs md:text-sm text-slate-400">
-                  <span>Service Charge ({settings?.serviceChargeRate || 0}%)</span>
-                  <span>₹{serviceCharge.toFixed(2)}</span>
-                </div>
-              )}
               {parcelCharge > 0 && (
                 <div className="flex justify-between text-xs md:text-sm text-slate-400">
                   <span>Parcel Charge</span>

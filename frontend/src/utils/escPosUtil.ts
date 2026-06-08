@@ -158,9 +158,7 @@ export class EscPosBuilder {
     builder.alignRight()
            .line(`Subtotal : Rs. ${Number(order.subtotal || 0).toFixed(2)}`);
 
-    if (order.serviceCharge > 0) {
-      builder.line(`Service Charge : Rs. ${Number(order.serviceCharge).toFixed(2)}`);
-    }
+
     if (order.parcelCharge > 0) {
       builder.line(`Parcel Charge : Rs. ${Number(order.parcelCharge).toFixed(2)}`);
     }

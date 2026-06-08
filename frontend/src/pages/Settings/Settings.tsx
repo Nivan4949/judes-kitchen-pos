@@ -15,7 +15,6 @@ const Settings = () => {
         phone: '',
         gstin: '',
         gstRate: 5,
-        serviceChargeRate: 0,
         parcelCharge: 0,
         deliveryCharge: 0,
         printerSize: '80mm'
@@ -133,7 +132,6 @@ const Settings = () => {
                 phone: settings.phone || '',
                 gstin: settings.gstin || '',
                 gstRate: settings.gstRate ?? 5.0,
-                serviceChargeRate: settings.serviceChargeRate ?? 0,
                 parcelCharge: settings.parcelCharge ?? 0,
                 deliveryCharge: settings.deliveryCharge ?? 0,
                 printerSize: settings.printerSize || '80mm'
@@ -1151,16 +1149,6 @@ const Settings = () => {
                                             className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
                                             value={restaurantForm.gstRate}
                                             onChange={(e) => setRestaurantForm({...restaurantForm, gstRate: parseFloat(e.target.value) || 0})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Service Charge (%)</label>
-                                        <input 
-                                            type="number"
-                                            step="0.1"
-                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
-                                            value={restaurantForm.serviceChargeRate}
-                                            onChange={(e) => setRestaurantForm({...restaurantForm, serviceChargeRate: parseFloat(e.target.value) || 0})}
                                         />
                                     </div>
                                     <div>

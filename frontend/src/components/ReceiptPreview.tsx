@@ -150,12 +150,7 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                 <span>Discount :</span>
                 <span>${(Number(order.discount) || 0).toFixed(2)}</span>
               </div>
-              ${Number(order.serviceCharge) > 0 ? `
-              <div class="total-row">
-                <span></span>
-                <span>Service Charge :</span>
-                <span>${Number(order.serviceCharge).toFixed(2)}</span>
-              </div>` : ''}
+
               ${Number(order.parcelCharge) > 0 ? `
               <div class="total-row">
                 <span></span>
@@ -356,7 +351,6 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                     <div className="flex flex-col gap-1 text-slate-500">
                       <p>Total :</p>
                       <p>Discount :</p>
-                      {Number(order.serviceCharge) > 0 && <p>Service Charge :</p>}
                       {Number(order.parcelCharge) > 0 && <p>Parcel Charge :</p>}
                       {Number(order.deliveryCharge) > 0 && <p>Delivery Charge :</p>}
                       <p>Return :</p>
@@ -364,7 +358,6 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
                     <div className="flex flex-col gap-1 font-bold">
                       <p>{(Number(order.subtotal) || 0).toFixed(2)}</p>
                       <p>{(Number(order.discount) || 0).toFixed(2)}</p>
-                      {Number(order.serviceCharge) > 0 && <p>{Number(order.serviceCharge).toFixed(2)}</p>}
                       {Number(order.parcelCharge) > 0 && <p>{Number(order.parcelCharge).toFixed(2)}</p>}
                       {Number(order.deliveryCharge) > 0 && <p>{Number(order.deliveryCharge).toFixed(2)}</p>}
                       <p>0.00</p>

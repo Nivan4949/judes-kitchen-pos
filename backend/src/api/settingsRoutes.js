@@ -20,7 +20,6 @@ router.get('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER', 'KITCHEN']), asyn
           gstin: '',
           currency: 'INR',
           gstRate: 5.0,
-          serviceChargeRate: 0,
           parcelCharge: 0,
           deliveryCharge: 0,
           printerSize: '80mm'
@@ -36,7 +35,7 @@ router.get('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER', 'KITCHEN']), asyn
 
 // Update settings
 router.put('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
-  const { name, logo, address, phone, gstin, currency, gstRate, serviceChargeRate, parcelCharge, deliveryCharge, printerSize } = req.body;
+  const { name, logo, address, phone, gstin, currency, gstRate, parcelCharge, deliveryCharge, printerSize } = req.body;
 
   try {
     const settings = await prisma.restaurantSettings.upsert({
@@ -49,7 +48,6 @@ router.put('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         gstin,
         currency,
         gstRate: gstRate !== undefined ? parseFloat(gstRate) : undefined,
-        serviceChargeRate: serviceChargeRate !== undefined ? parseFloat(serviceChargeRate) : undefined,
         parcelCharge: parcelCharge !== undefined ? parseFloat(parcelCharge) : undefined,
         deliveryCharge: deliveryCharge !== undefined ? parseFloat(deliveryCharge) : undefined,
         printerSize
@@ -63,7 +61,6 @@ router.put('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         gstin,
         currency: currency || 'INR',
         gstRate: gstRate !== undefined ? parseFloat(gstRate) : 5.0,
-        serviceChargeRate: serviceChargeRate !== undefined ? parseFloat(serviceChargeRate) : 0,
         parcelCharge: parcelCharge !== undefined ? parseFloat(parcelCharge) : 0,
         deliveryCharge: deliveryCharge !== undefined ? parseFloat(deliveryCharge) : 0,
         printerSize: printerSize || '80mm'
