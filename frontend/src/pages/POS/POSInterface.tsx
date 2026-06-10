@@ -566,6 +566,102 @@ const POSInterface: React.FC = () => {
     }
   };
 
+  const handleSystemKotPrint = (kotData: any) => {
+    if (!kotData) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      console.error('Popup blocked!');
+      alert('Popup blocker active! Please allow popups for printing.');
+      return;
+    }
+
+    const itemsHtml = (kotData.items || []).map((item: any) => {
+      const variantSuffix = item.variant ? ` (${item.variant})` : '';
+      const fullName = item.name + variantSuffix;
+      let modifiersHtml = '';
+      if (item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+        modifiersHtml = item.modifiers.map((m: any) => `<div style="font-size: 10px; font-weight: normal; color: #555; padding-left: 10px;">+ ${m.name}</div>`).join('');
+      }
+      let notesHtml = '';
+      if (item.notes) {
+        notesHtml = `<div style="font-size: 10px; font-weight: bold; color: #d32f2f; padding-left: 10px;">* Note: ${item.notes}</div>`;
+      }
+      return `
+      <tr>
+        <td style="font-size: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-weight: bold; text-transform: uppercase; word-break: break-word; max-width: 200px; vertical-align: top;">
+          ${fullName}
+          ${modifiersHtml}
+          ${notesHtml}
+        </td>
+        <td style="font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #eee; font-weight: 900; text-align: right; vertical-align: top;">x${(Number(item.quantity) || 0).toFixed(0)}</td>
+      </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Print KOT - ${kotData.kotNo}</title>
+          <style>
+            @page { margin: 0; size: 80mm auto; }
+            body { 
+              width: 70mm; 
+              margin: 0 auto; 
+              padding: 5mm; 
+              font-family: 'Courier New', Courier, monospace; 
+              font-size: 12px;
+              color: #000;
+              background: #fff;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .bold { font-weight: bold; }
+            .dashed-border { border-top: 1px dashed #000; margin: 8px 0; }
+            table { width: 100%; border-collapse: collapse; margin: 5px 0; }
+            th { text-align: left; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 10px; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+          </style>
+        </head>
+        <body>
+          <div class="text-center">
+            <h1 style="margin: 0; font-size: 20px; font-weight: 900; text-transform: uppercase;">
+              ${kotData.status === 'CANCELLED' ? 'KOT CANCELLATION' : 'KOT TICKET'}
+            </h1>
+            <div class="dashed-border"></div>
+          </div>
+          <div style="margin-bottom: 5px; border-bottom: 1px dashed #000; padding-bottom: 5px;">
+            <div class="total-row"><span>KOT No : ${kotData.kotNo}</span></div>
+            <div class="total-row"><span>Time   : ${new Date(kotData.createdAt || Date.now()).toLocaleTimeString()}</span></div>
+            ${kotData.tableName ? `<div class="total-row"><span>Table  : ${kotData.tableName}</span></div>` : `<div class="total-row"><span>Mode   : ${kotData.orderType || 'Walk-in'}</span></div>`}
+            ${kotData.waiterName ? `<div class="total-row"><span>Waiter : ${kotData.waiterName}</span></div>` : ''}
+            ${kotData.reprintCount > 0 ? `<div class="total-row"><span class="bold">** REPRINT #${kotData.reprintCount} **</span></div>` : ''}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 75%; text-align: left;">Description</th>
+                <th style="width: 25%; text-align: right;">Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <div class="dashed-border"></div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                window.close();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleSendKot = async () => {
     if (cart.length === 0) return;
 
@@ -657,16 +753,25 @@ const POSInterface: React.FC = () => {
       console.log('KOT response:', kotResponse.data);
       const { kot, cancelKot } = kotResponse.data;
 
-      // Bluetooth Print
+      // Print KOT (Bluetooth or fallback to System Browser printer)
       if (isConnected && print) {
-        if (kot) {
-          const kotBytes = EscPosBuilder.generateKotReceipt(kot, settings);
-          await print(kotBytes);
+        try {
+          if (kot) {
+            const kotBytes = EscPosBuilder.generateKotReceipt(kot, settings);
+            await print(kotBytes);
+          }
+          if (cancelKot) {
+            const cancelKotBytes = EscPosBuilder.generateKotReceipt(cancelKot, settings);
+            await print(cancelKotBytes);
+          }
+        } catch (printErr) {
+          console.error('Bluetooth KOT print failed, falling back to system print:', printErr);
+          if (kot) handleSystemKotPrint(kot);
+          if (cancelKot) handleSystemKotPrint(cancelKot);
         }
-        if (cancelKot) {
-          const cancelKotBytes = EscPosBuilder.generateKotReceipt(cancelKot, settings);
-          await print(cancelKotBytes);
-        }
+      } else {
+        if (kot) handleSystemKotPrint(kot);
+        if (cancelKot) handleSystemKotPrint(cancelKot);
       }
 
       alert('KOT sent to kitchen successfully!');
