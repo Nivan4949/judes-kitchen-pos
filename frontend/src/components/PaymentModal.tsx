@@ -73,6 +73,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
       await onPaymentComplete(paymentMethod, amountPaid, orderType);
     } catch (err) {
       console.error('Payment Error:', err);
+    } finally {
       setLoading(false);
     }
   };
