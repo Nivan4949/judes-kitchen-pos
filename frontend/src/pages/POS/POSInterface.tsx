@@ -420,11 +420,6 @@ const POSInterface: React.FC = () => {
   const handlePaymentComplete = async (method: string, amount: string, orderMode: string = 'Walk-in') => {
     if (cart.length === 0) return;
 
-    if (!activeShift) {
-      alert('Please open your cashier shift from the Shift Closing screen before completing a bill.');
-      return;
-    }
-
     const totals = getTotals();
     const { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
 
