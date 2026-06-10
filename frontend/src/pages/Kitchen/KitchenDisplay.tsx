@@ -146,12 +146,8 @@ const KitchenDisplay = () => {
                   return (
                     <div 
                       key={item.id}
-                      onClick={() => {
-                        const nextStatus = item.status === 'PENDING' ? 'PREPARING' : item.status === 'PREPARING' ? 'READY' : 'SERVED';
-                        updateKotItemStatus(kot.id, item.id, nextStatus);
-                      }}
                       className={`
-                        py-3 flex justify-between items-start gap-4 cursor-pointer transition-all
+                        py-3 flex justify-between items-start gap-4 transition-all
                         ${isItemReady ? 'opacity-40 line-through' : ''}
                       `}
                     >
@@ -198,39 +194,6 @@ const KitchenDisplay = () => {
                     </div>
                   );
                 })}
-              </div>
-
-              {/* Actions Footer */}
-              <div className="p-4 bg-slate-800/40 border-t border-slate-700/50 flex gap-2 shrink-0">
-                {kot.status === 'PENDING' && (
-                  <button 
-                    onClick={() => updateKotStatus(kot.id, 'PREPARING')}
-                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
-                  >
-                    Start Cooking
-                  </button>
-                )}
-                {kot.status === 'PREPARING' && (
-                  <button 
-                    onClick={() => updateKotStatus(kot.id, 'READY')}
-                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-900 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
-                  >
-                    Ready for Pick
-                  </button>
-                )}
-                {kot.status === 'READY' && (
-                  <button 
-                    onClick={() => updateKotStatus(kot.id, 'SERVED')}
-                    className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-emerald-400 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1"
-                  >
-                    <CheckCircle size={14} /> Served
-                  </button>
-                )}
-                {kot.status === 'CANCELLED' && (
-                  <div className="w-full py-2 bg-red-500/10 text-red-500 rounded-xl font-black text-xs text-center border border-red-500/20">
-                    CANCELLED
-                  </div>
-                )}
               </div>
             </div>
           );

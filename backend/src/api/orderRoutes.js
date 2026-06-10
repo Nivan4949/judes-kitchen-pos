@@ -357,11 +357,26 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
         });
       }
 
-      // 10. Socket Events
+      // 10. Auto-close KOTs if the order is settled/completed
+      if (newOrder.status === 'COMPLETED') {
+        await tx.kOT.updateMany({
+          where: { orderId: newOrder.id },
+          data: { status: 'SERVED' }
+        });
+        await tx.kOTItem.updateMany({
+          where: { kot: { orderId: newOrder.id } },
+          data: { status: 'SERVED' }
+        });
+      }
+
+      // 11. Socket Events
       const io = req.app.get('io');
       if (io) {
         io.emit('INVENTORY_UPDATE', { items: orderItems });
         io.emit('ORDER_CREATED', newOrder);
+        if (newOrder.status === 'COMPLETED') {
+          io.emit('KOT_STATUS_UPDATED', { orderId: newOrder.id });
+        }
       }
 
       return newOrder;
@@ -586,11 +601,26 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         });
       }
 
-      // 8. Emit events
+      // 8. Auto-close KOTs if the order is settled/completed
+      if (finalOrder.status === 'COMPLETED') {
+        await tx.kOT.updateMany({
+          where: { orderId: finalOrder.id },
+          data: { status: 'SERVED' }
+        });
+        await tx.kOTItem.updateMany({
+          where: { kot: { orderId: finalOrder.id } },
+          data: { status: 'SERVED' }
+        });
+      }
+
+      // 9. Emit events
       const io = req.app.get('io');
       if (io) {
           io.emit('INVENTORY_UPDATE', { items: newItems });
           io.emit('ORDER_UPDATED', finalOrder);
+          if (finalOrder.status === 'COMPLETED') {
+            io.emit('KOT_STATUS_UPDATED', { orderId: finalOrder.id });
+          }
       }
 
       return finalOrder;
