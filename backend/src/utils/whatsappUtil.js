@@ -68,7 +68,7 @@ const whatsappUtil = {
       params.append('to', formattedPhone);
       params.append('document', pdfUrl);
       params.append('filename', `Invoice-${order.invoiceNo}.pdf`);
-      params.append('caption', `*TAX INVOICE: ${order.invoiceNo}*\nThank you for shopping with Fresh Naad India\nHave a nice day 🤍,visit again..!\n\n\n\nhttps://www.instagram.com/freshnaad?igsh=MWQ1Zjc2NTVtbjJyeQ== \n.\n.\n.\nFor more products and updates follow us ❕❕`);
+      params.append('caption', `*TAX INVOICE: ${order.invoiceNo}*\nThank you for dining with JUDE'S KITCHEN\nHave a nice day 🤍, visit again..!`);
 
       const response = await axios.post(docEndpoint, params, { 
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

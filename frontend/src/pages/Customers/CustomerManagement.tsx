@@ -540,7 +540,7 @@ const CustomerManagement = () => {
                   </div>
                   
                   <div className="p-10 bg-slate-50/50 border-t border-slate-100 flex justify-center">
-                    <p className="text-[10px] font-black text-brand-400 uppercase tracking-[0.5em]">FreshNaad • Global CRM Identity Layer • v4.0</p>
+                    <p className="text-[10px] font-black text-brand-400 uppercase tracking-[0.5em]">JUDE'S KITCHEN • Global CRM Identity Layer • v4.0</p>
                   </div>
               </div>
           </div>

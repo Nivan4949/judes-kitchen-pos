@@ -29,13 +29,18 @@ async function autoSeedDatabase() {
     // Ensure default settings exist
     await prisma.restaurantSettings.upsert({
       where: { id: 'settings' },
-      update: {},
+      update: {
+        name: "JUDE'S KITCHEN",
+        address: "DHOTTAPPANKULAM,SULTHAN BATHERY,WAYANAD",
+        phone: "+91 89431 21110",
+        gstin: ""
+      },
       create: {
         id: 'settings',
         name: "JUDE'S KITCHEN",
-        address: "Kodassery, Pandikkad (po), Malappuram, Kerala",
-        phone: "8606391315, 75608 57580",
-        gstin: "32AAAAA0000A1Z5",
+        address: "DHOTTAPPANKULAM,SULTHAN BATHERY,WAYANAD",
+        phone: "+91 89431 21110",
+        gstin: "",
         currency: "INR",
         gstRate: 5.0,
         parcelCharge: 10.0,

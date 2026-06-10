@@ -5,6 +5,7 @@ import api from '../api/api';
 import { Bluetooth, Printer, Share2, X } from 'lucide-react';
 import { useBluetoothPrinter } from '../hooks/useBluetoothPrinter';
 import { EscPosBuilder } from '../utils/escPosUtil';
+import useRestaurantStore from '../store/restaurantStore';
 
 interface ReceiptPreviewProps {
   order: any;
@@ -18,6 +19,14 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
   const [isSending, setIsSending] = React.useState(false);
   const [isPrinting, setIsPrinting] = React.useState(false);
   const { print, isConnected, ensureConnected } = useBluetoothPrinter();
+  
+  const { settings, fetchSettings } = useRestaurantStore();
+
+  React.useEffect(() => {
+    if (!settings) {
+      fetchSettings();
+    }
+  }, [settings, fetchSettings]);
 
   if (!order) return null;
 
@@ -107,11 +116,11 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
           </head>
           <body>
             <div class="text-center">
-              <h1 style="margin: 0; font-size: 18px; font-weight: 900; text-transform: uppercase;">JUDE'S KITCHEN</h1>
-              <p style="margin: 2px 0; font-size: 10px; line-height: 1.2;">Kodassery, Pandikkad (po),<br>Malappuram, Kerala</p>
+              <h1 style="margin: 0; font-size: 18px; font-weight: 900; text-transform: uppercase;">${settings?.name || "JUDE'S KITCHEN"}</h1>
+              <p style="margin: 2px 0; font-size: 10px; line-height: 1.2;">${settings?.address || "DHOTTAPPANKULAM, SULTHAN BATHERY, WAYANAD"}</p>
               <div style="display: flex; justify-content: space-between; font-size: 9px; margin-top: 5px; font-weight: bold; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0;">
-                <span>FSSAI NO: 21326222000253</span>
-                <span>Mob: 8606391315, 75608 57580</span>
+                <span>FSSAI NO: 21326248000559</span>
+                <span>Mob: ${settings?.phone || "+91 89431 21110"}</span>
               </div>
               <p style="margin: 4px 0; font-size: 10px; opacity: 0.8;">Date : ${order.createdAt ? new Date(order.createdAt).toLocaleDateString() : new Date().toLocaleDateString()} ${order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : new Date().toLocaleTimeString()}</p>
             </div>
@@ -218,9 +227,10 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
     const handleBluetoothPrint = async () => {
       try {
         const businessInfo = {
-          name: 'JUDE\'S KITCHEN',
-          address: 'Kodassery, Pandikkad (po), Malappuram, Kerala',
-          phone: '8606391315, 75608 57580'
+          name: settings?.name || "JUDE'S KITCHEN",
+          address: settings?.address || 'DHOTTAPPANKULAM, SULTHAN BATHERY, WAYANAD',
+          phone: settings?.phone || '+91 89431 21110',
+          gstin: settings?.gstin || ''
         };
         const bytes = EscPosBuilder.generateReceipt(order, businessInfo);
         await print(bytes);
@@ -264,12 +274,12 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ order, onClose }) => {
 
           <div className="flex-1 overflow-y-auto p-6 font-mono text-[11px] text-slate-800 print:overflow-visible print:p-4" id="receipt-content">
             <div className="text-center mb-4">
-              <h1 className="text-xl font-black uppercase mb-1">JUDE'S KITCHEN</h1>
-              <p className="text-[10px] leading-tight">Kodassery, Pandikkad (po),<br />Malappuram, Kerala</p>
+              <h1 className="text-xl font-black uppercase mb-1">{settings?.name || "JUDE'S KITCHEN"}</h1>
+              <p className="text-[10px] leading-tight">{settings?.address || 'DHOTTAPPANKULAM, SULTHAN BATHERY, WAYANAD'}</p>
               
               <div className="flex justify-between border-y border-dashed border-slate-300 py-1.5 my-2 text-[9px] font-bold">
-                <span className="text-left">FSSAI: 21326222000253</span>
-                <span className="text-right whitespace-nowrap">Mob: 8606391315, 75608 57580</span>
+                <span className="text-left">FSSAI: 21326248000559</span>
+                <span className="text-right whitespace-nowrap">Mob: {settings?.phone || '+91 89431 21110'}</span>
               </div>
 
               <div className="flex justify-center gap-2 text-[10px] mt-1 opacity-70">

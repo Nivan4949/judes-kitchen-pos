@@ -471,8 +471,8 @@ model RestaurantSettings {
   id                 String   @id @default("settings")
   name               String   @default("JUDE'S KITCHEN")
   logo               String?
-  address            String   @default("Kodassery, Malappuram")
-  phone              String   @default("8606391315")
+  address            String   @default("DHOTTAPPANKULAM,SULTHAN BATHERY,WAYANAD")
+  phone              String   @default("+91 89431 21110")
   gstin              String?
   currency           String   @default("INR")
   gstRate            Float    @default(0)

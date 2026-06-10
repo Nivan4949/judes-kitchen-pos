@@ -18,19 +18,19 @@ const pdfUtil = {
     // --- Header Section ---
     doc.font('Helvetica-Bold')
        .fontSize(22)
-       .text('FRESH NAAD FOODS INDIA', { align: 'center' });
+       .text("JUDE'S KITCHEN", { align: 'center' });
     
     doc.font('Helvetica')
        .fontSize(10)
-       .text('Kodassery, Pandikkad (po), Malappuram, Kerala', { align: 'center' });
+       .text('DHOTTAPPANKULAM, SULTHAN BATHERY, WAYANAD', { align: 'center' });
     
     doc.moveDown(0.5);
     
     // FSSAI and Mob Row
     const topOfContact = doc.y;
     doc.fontSize(9)
-       .text(`FSSAI NO: 21326222000253`, 40, topOfContact, { align: 'left' })
-       .text(`Mob: +91 8606391315, 75608 57580`, 40, topOfContact, { align: 'right' });
+       .text(`FSSAI NO: 21326248000559`, 40, topOfContact, { align: 'left' })
+       .text(`Mob: +91 89431 21110`, 40, topOfContact, { align: 'right' });
 
     doc.moveDown(1);
     doc.moveTo(40, doc.y).lineTo(555, doc.y).lineWidth(1).stroke('#EEEEEE');
@@ -155,7 +155,7 @@ const pdfUtil = {
        .fontSize(20)
        .text('CREDIT NOTE', 50, 50, { align: 'left' })
        .fontSize(10)
-       .text('FRESH NAAD', 200, 50, { align: 'right' });
+       .text("JUDE'S KITCHEN", 200, 50, { align: 'right' });
 
     doc.moveDown();
     doc.fillColor('#000000')
