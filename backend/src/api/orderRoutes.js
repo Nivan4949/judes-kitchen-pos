@@ -73,6 +73,24 @@ router.post('/share-whatsapp', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req
 });
 // --- END CUSTOMER WHATSAPP ROUTES ---
 
+// Fetch all pending QR approvals
+router.get('/pending-approvals', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { status: 'PENDING_APPROVAL' },
+      include: {
+        orderItems: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get order by ID or InvoiceNo (Dual-Lookup Safety)
 router.get('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
   try {
@@ -892,23 +910,7 @@ router.post('/qr-request', async (req, res) => {
   }
 });
 
-// Fetch all pending QR approvals
-router.get('/pending-approvals', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
-  try {
-    const orders = await prisma.order.findMany({
-      where: { status: 'PENDING_APPROVAL' },
-      include: {
-        orderItems: {
-          include: { product: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+
 
 // Approve order request
 router.post('/:id/approve', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {

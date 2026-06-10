@@ -431,8 +431,6 @@ const POSInterface: React.FC = () => {
     // DETECT NEXT SEQUENTIAL INVOICE NO - Optimized to avoid reading all orders
     let nextInvoiceNo = localStorage.getItem('last_invoice_no') || '100';
     try {
-      const db = await offlineDB.initDB();
-      const tx = db.transaction('orders', 'readonly');
       const lastInvoice = parseInt(nextInvoiceNo);
       nextInvoiceNo = (lastInvoice + 1).toString();
       localStorage.setItem('last_invoice_no', nextInvoiceNo);
