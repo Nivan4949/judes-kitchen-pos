@@ -512,16 +512,6 @@ const POSInterface: React.FC = () => {
         console.error('Local persistence failed:', err);
       }
       
-      // Auto Print receipt if printer is paired & connected
-      if (isConnected && print) {
-        try {
-          const printBytes = EscPosBuilder.generateReceipt(finalOrderData, settings);
-          await print(printBytes);
-        } catch (printErr) {
-          console.error('Receipt print failed:', printErr);
-        }
-      }
-
       // 2. UI TRANSITION (INSTANT)
       setRecentOrder(finalOrderData);
       clearCart();
