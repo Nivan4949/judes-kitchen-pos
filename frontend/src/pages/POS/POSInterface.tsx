@@ -716,19 +716,23 @@ const POSInterface: React.FC = () => {
       };
 
       let orderIdToUse = activeOrderId;
-
-      if (activeOrderId) {
-        const response = await api.put(`/orders/${activeOrderId}`, orderPayload);
-        console.log('Order updated:', response.data);
-      } else {
-        const response = await api.post('/orders', orderPayload);
-        orderIdToUse = response.data.id;
-        // Set activeOrderId in store
+      if (!orderIdToUse) {
+        orderIdToUse = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        }));
         usePOSStore.setState({ activeOrderId: orderIdToUse });
-        console.log('Order created:', response.data);
       }
 
-      // Generate KOT
+      // Ensure the generated ID is passed inside the order payload
+      const orderPayloadWithId = { ...orderPayload, id: orderIdToUse };
+
+      // Concurrently kick off the order save in the background (heavy DB transaction)
+      const orderSavePromise = activeOrderId
+        ? api.put(`/orders/${activeOrderId}`, orderPayloadWithId)
+        : api.post('/orders', orderPayloadWithId);
+
+      // Instantly generate KOT (very fast database insertion)
       const kotResponse = await api.post('/kots', {
         orderId: orderIdToUse,
         tableId,
@@ -764,8 +768,16 @@ const POSInterface: React.FC = () => {
         if (cancelKot) handleSystemKotPrint(cancelKot);
       }
 
+      // Handle order sync completion & refresh tables in background
+      orderSavePromise
+        .then(() => {
+          fetchTables(); // Refresh floor status
+        })
+        .catch(err => {
+          console.error('Background order sync failed:', err);
+        });
+
       alert('KOT sent to kitchen successfully!');
-      fetchTables(); // Refresh floor status
     } catch (error: any) {
       console.error('KOT Failed:', error);
       alert(error.response?.data?.error || 'Failed to place KOT');

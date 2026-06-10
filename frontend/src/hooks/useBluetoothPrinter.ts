@@ -226,21 +226,27 @@ export const useBluetoothPrinter = () => {
       
       if (!characteristic) throw new Error('Printer not ready.');
 
-      // B-POS and older Chinese printers require slow chunking
-      const CHUNK_SIZE = 20;
+      // 120 bytes is a safe, optimal chunk size for Bluetooth printers (MTU is usually negotiated up to 512, safe fallback).
+      // This reduces the number of Bluetooth writes by 6x compared to 20-byte chunks.
+      const CHUNK_SIZE = 120;
+      const writeWithoutResponse = !!characteristic.properties.writeWithoutResponse;
+
       for (let i = 0; i < data.length; i += CHUNK_SIZE) {
         const chunk = data.slice(i, i + CHUNK_SIZE);
         try {
-          if (characteristic.properties.writeWithoutResponse) {
+          if (writeWithoutResponse) {
             await characteristic.writeValueWithoutResponse(chunk);
+            // Pacing delay only needed for write without response to avoid overflowing printer buffer.
+            // 15ms is extremely safe and fast (over 4x faster than 60ms).
+            await new Promise(resolve => setTimeout(resolve, 15));
           } else {
+            // Write with response is inherently flow-controlled by the device GATT server, so no artificial delay is needed!
             await characteristic.writeValue(chunk);
           }
         } catch (e) {
+          // If writeWithoutResponse fails or throws, fallback to write with response
           await characteristic.writeValue(chunk);
         }
-        // Increased delay to 60ms for B-POS stability on weak tablets
-        await new Promise(resolve => setTimeout(resolve, 60));
       }
     } catch (err: any) {
       console.error('Print Error:', err);
