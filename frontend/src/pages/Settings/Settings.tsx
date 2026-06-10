@@ -34,6 +34,7 @@ const Settings = () => {
     // Permission Modules Definition
     const ACCESS_MODULES = [
         { key: 'POS', label: 'POS Billing' },
+        { key: 'KITCHEN', label: 'Kitchen KDS / KOT' },
         { key: 'INVENTORY', label: 'Inventory' },
         { key: 'PROCUREMENT', label: 'Stock-In' },
         { key: 'AP', label: 'Accounts Payable' },
