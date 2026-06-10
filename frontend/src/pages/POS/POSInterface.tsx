@@ -1107,7 +1107,18 @@ const POSInterface: React.FC = () => {
               </button>
               
               <button 
-                onClick={() => { setIsMobileCartOpen(false); setIsPaymentModalOpen(true); }}
+                onClick={async () => { 
+                  setIsMobileCartOpen(false); 
+                  const { roundedTotal } = getTotals();
+                  setLoading(true);
+                  try {
+                    await handlePaymentComplete('CASH', roundedTotal.toString(), orderType); 
+                  } catch (err) {
+                    console.error('Checkout failed:', err);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
                 className="py-3 bg-brand-primary hover:bg-brand-secondary text-white font-black rounded-xl md:rounded-2xl text-xs uppercase tracking-wider shadow shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
                 disabled={cart.length === 0 || loading}
               >
