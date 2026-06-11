@@ -107,9 +107,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-full max-h-[90vh] md:h-[700px] md:max-h-[95vh] animate-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row h-auto max-h-[90vh] md:h-[700px] md:max-h-[95vh] animate-in zoom-in-95 duration-200">
         {/* Left Side: Summary & Options */}
-        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col gap-4 md:gap-5 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 overflow-y-auto custom-scrollbar">
+        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col gap-4 md:gap-5 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 md:overflow-y-auto md:custom-scrollbar">
           <div className="flex justify-between items-center shrink-0">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">Checkout</h2>
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
@@ -257,7 +257,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
         </div>
 
         {/* Right Side: Numeric Keypad & Footer */}
-        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col gap-6 md:gap-8 bg-white overflow-y-auto">
+        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col gap-6 md:gap-8 bg-white md:overflow-y-auto">
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Amount Paid (₹)</label>
             <div className={`p-4 rounded-3xl border-2 flex items-center justify-between transition-all ${isAmountCustom ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 bg-slate-50'}`}>
