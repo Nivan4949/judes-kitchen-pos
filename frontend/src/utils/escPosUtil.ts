@@ -114,7 +114,13 @@ export class EscPosBuilder {
     if (width === 32) {
       builder.line('Item           Qty  Price  Total');
     } else {
-      builder.line('#  Description       Qty      Price    Tax%     Total');
+      // 48 columns: slNoHeader(2) + ' ' + descHeader(18) + ' ' + qtyHeader(5) + ' ' + priceHeader(9) + ' ' + totalHeader(10) = 48
+      const slNoHeader = '#'.padEnd(2);
+      const descHeader = 'Description'.padEnd(18);
+      const qtyHeader = 'Qty'.padStart(5);
+      const priceHeader = 'Price'.padStart(9);
+      const totalHeader = 'Total'.padStart(10);
+      builder.line(`${slNoHeader} ${descHeader} ${qtyHeader} ${priceHeader} ${totalHeader}`);
     }
     builder.bold(false);
 
@@ -126,16 +132,17 @@ export class EscPosBuilder {
       const qtyVal = Number(item.quantity);
       const qty = qtyVal.toFixed(0);
       const priceVal = Number(item.price);
-      
       const totalVal = Number(item.total);
       
       if (width === 32) {
         const itemLine = `${fullName.substring(0, 14).padEnd(14)} ${qty.padStart(3)} ${priceVal.toFixed(0).padStart(5)} ${totalVal.toFixed(0).padStart(6)}`;
         builder.line(itemLine);
       } else {
-        const desc = fullName.substring(0, 16).padEnd(16);
-        const gstRate = (item.gstRate || item.product?.gstRate || 0).toFixed(0).padStart(3);
-        const itemLine = `${slNo} ${desc} ${qty.padStart(5)} ${priceVal.toFixed(2).padStart(10)} ${gstRate}% ${totalVal.toFixed(2).padStart(10)}`;
+        const desc = fullName.substring(0, 18).padEnd(18);
+        const qtyStr = qty.padStart(5);
+        const priceStr = priceVal.toFixed(2).padStart(9);
+        const totalStr = totalVal.toFixed(2).padStart(10);
+        const itemLine = `${slNo} ${desc} ${qtyStr} ${priceStr} ${totalStr}`;
         builder.line(itemLine);
       }
 

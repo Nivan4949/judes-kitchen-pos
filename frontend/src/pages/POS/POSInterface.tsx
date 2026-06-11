@@ -441,6 +441,7 @@ const POSInterface: React.FC = () => {
       invoiceNo: activeOrderId ? undefined : nextInvoiceNo,
       orderItems: cart.map((item: any, index: number) => ({
         productId: item.id,
+        name: item.name,
         quantity: item.quantity,
         price: item.sellingPrice,
         mrp: item.mrp || item.sellingPrice,
@@ -685,6 +686,7 @@ const POSInterface: React.FC = () => {
         invoiceNo: activeOrderId ? undefined : (Date.now() % 10000).toString(),
         orderItems: cart.map((item, idx) => ({
           productId: item.id,
+          name: item.name,
           quantity: item.quantity,
           price: item.sellingPrice,
           mrp: item.mrp || item.sellingPrice,
