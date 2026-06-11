@@ -52,14 +52,8 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
   try {
     const result = await prisma.$transaction(async (tx) => {
       // 1. Calculate KOT Number
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const kotCountToday = await tx.kOT.count({
-        where: {
-          createdAt: { gte: today }
-        }
-      });
-      const kotNo = `KOT-${(kotCountToday + 1).toString().padStart(3, '0')}`;
+      const kotCountAll = await tx.kOT.count();
+      const kotNo = `KOT-${(kotCountAll + 1).toString().padStart(3, '0')}`;
 
       // 2. Repeat Order Logic: Find previous KOT items for this orderId (if it exists)
       let itemsToSubmit = [];
@@ -200,17 +194,6 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
         });
       }
 
-      // Update active table occupied state & amount if dine-in
-      if (tableId && orderId) {
-        const orderAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        await tx.table.update({
-          where: { id: tableId },
-          data: {
-            runningOrderAmount: orderAmount,
-            status: 'OCCUPIED'
-          }
-        });
-      }
 
       // Trigger Socket event for Kitchen Display Screen
       const io = req.app.get('io');

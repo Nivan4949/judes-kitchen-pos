@@ -27,12 +27,15 @@ const usePOSStore = create(
         console.log('Socket initialization disabled in this build');
       },
 
-      setOrderType: (orderType) => set({ 
+      setOrderType: (orderType) => set((state) => ({ 
         orderType,
+        // Clear table details if not dine-in
+        tableId: orderType === 'Dine-in' ? state.tableId : '',
+        tableName: orderType === 'Dine-in' ? state.tableName : '',
         // Clear irrelevant charges
-        parcelCharge: orderType === 'Takeaway' ? get().parcelCharge : 0,
-        deliveryCharge: orderType === 'Delivery' ? get().deliveryCharge : 0
-      }),
+        parcelCharge: orderType === 'Takeaway' ? state.parcelCharge : 0,
+        deliveryCharge: orderType === 'Delivery' ? state.deliveryCharge : 0
+      })),
 
       setWaiter: (waiterName) => set({ waiterName }),
       

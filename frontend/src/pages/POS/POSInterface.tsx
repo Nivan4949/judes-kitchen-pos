@@ -434,7 +434,7 @@ const POSInterface: React.FC = () => {
     }
     
     const orderData: any = {
-      id: activeOrderId || ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      id: activeOrderId || ((window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
       })), 
@@ -717,7 +717,7 @@ const POSInterface: React.FC = () => {
 
       let orderIdToUse = activeOrderId;
       if (!orderIdToUse) {
-        orderIdToUse = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        orderIdToUse = ((window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         }));
@@ -1469,6 +1469,9 @@ const POSInterface: React.FC = () => {
                                   }
                                 }
                               } else {
+                                if (activeOrderId && table.id !== tableId) {
+                                  clearCart();
+                                }
                                 setTable(table.id, table.number);
                                 setIsTableModalOpen(false);
                               }
