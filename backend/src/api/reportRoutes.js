@@ -545,21 +545,76 @@ router.get('/cashflow', async (req, res) => {
 // 7. Balance Sheet (Summary snapshot)
 router.get('/balance-sheet', async (req, res) => {
   try {
-    const products = await prisma.product.findMany();
+    // 1. Inventory value
+    const products = await prisma.product.findMany({
+      select: { stockQuantity: true, purchasePrice: true }
+    });
     const inventoryValue = products.reduce((sum, p) => sum + (p.stockQuantity * p.purchasePrice), 0);
     
-    const customers = await prisma.customer.findMany();
+    // 2. Receivables
+    const customers = await prisma.customer.findMany({
+      select: { creditBalance: true }
+    });
     const receivables = customers.reduce((sum, c) => sum + c.creditBalance, 0);
     
+    // 3. Cash balance
+    const payments = await prisma.payment.findMany({
+      where: { status: 'SUCCESS' },
+      select: { amount: true }
+    });
+    const cashIn = payments.reduce((sum, p) => sum + p.amount, 0);
+
+    const purchasePayments = await prisma.purchasePayment.findMany({
+      select: { amount: true }
+    });
+    const cashOutPurchases = purchasePayments.reduce((sum, pp) => sum + pp.amount, 0);
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        NOT: { type: 'Discount' }
+      },
+      select: { amount: true }
+    });
+    const cashOutExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    const cashBalance = cashIn - cashOutPurchases - cashOutExpenses;
+    const totalAssets = inventoryValue + receivables + cashBalance;
+
+    // 4. Liabilities (Payables)
+    const purchases = await prisma.purchase.findMany({
+      select: { balanceDue: true }
+    });
+    const payables = purchases.reduce((sum, p) => sum + p.balanceDue, 0);
+    
+    const purchaseReturns = await prisma.purchaseReturn.findMany({
+      select: { totalAmount: true }
+    });
+    const returnsTotal = purchaseReturns.reduce((sum, r) => sum + r.totalAmount, 0);
+    const liabilitiesVal = Math.max(0, payables - returnsTotal);
+
+    // 5. Equity
+    const netWorth = totalAssets - liabilitiesVal;
+
     res.json({
       assets: {
         inventoryValue,
         receivables,
-        totalAssets: inventoryValue + receivables
+        cashBalance,
+        totalAssets
       },
-      liabilities: {} // Simplified for POS
+      liabilities: {
+        payables: liabilitiesVal,
+        totalLiabilities: liabilitiesVal
+      },
+      equity: {
+        netWorth,
+        totalLiabilitiesAndEquity: liabilitiesVal + netWorth
+      }
     });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    console.error('Balance Sheet API Error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 8. Party Reports (All Parties)

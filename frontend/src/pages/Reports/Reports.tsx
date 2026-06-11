@@ -416,6 +416,20 @@ const Reports = () => {
                 ]);
                 break;
 
+              case 'balance-sheet':
+                headers = ['Account Category', 'Line Item', 'Amount'];
+                data = [
+                  ['ASSETS', 'Cash & Bank Balance', `Rs.${(reportData.assets?.cashBalance || 0).toFixed(2)}`],
+                  ['ASSETS', 'Inventory Cost Value', `Rs.${(reportData.assets?.inventoryValue || 0).toFixed(2)}`],
+                  ['ASSETS', 'Customer Receivables', `Rs.${(reportData.assets?.receivables || 0).toFixed(2)}`],
+                  ['ASSETS', 'TOTAL ASSETS', `Rs.${(reportData.assets?.totalAssets || 0).toFixed(2)}`],
+                  ['LIABILITIES', 'Supplier Payables', `Rs.${(reportData.liabilities?.payables || 0).toFixed(2)}`],
+                  ['LIABILITIES', 'TOTAL LIABILITIES', `Rs.${(reportData.liabilities?.totalLiabilities || 0).toFixed(2)}`],
+                  ['EQUITY', 'Capital Net Worth', `Rs.${(reportData.equity?.netWorth || 0).toFixed(2)}`],
+                  ['EQUITY', 'TOTAL LIABILITIES & EQUITY', `Rs.${(reportData.equity?.totalLiabilitiesAndEquity || 0).toFixed(2)}`]
+                ];
+                break;
+
               default:
                 // Generic fallback for any other list of objects
                 if (Array.isArray(reportData)) {
@@ -1315,20 +1329,68 @@ const Reports = () => {
 
       case 'balance-sheet': {
         return (
-          <div className="max-w-xl mx-auto space-y-4">
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 className="text-lg font-black text-slate-800 border-b pb-4 mb-4">Assets</h3>
-                <div className="flex justify-between items-center py-2 text-slate-600 font-medium">
-                  <span>Inventory Value</span>
-                  <span>₹{reportData.assets?.inventoryValue?.toFixed(2)}</span>
+          <div className="max-w-xl mx-auto space-y-6">
+             {/* Assets */}
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <h3 className="text-lg font-black text-slate-800 border-b pb-4 mb-4 flex justify-between">
+                  <span>Assets</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Current & Fixed</span>
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-1 text-slate-600 font-medium">
+                    <span>Cash & Bank Balance</span>
+                    <span className="font-bold text-slate-800">₹{reportData.assets?.cashBalance?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 text-slate-600 font-medium">
+                    <span>Inventory Cost Value</span>
+                    <span className="font-bold text-slate-800">₹{reportData.assets?.inventoryValue?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 text-slate-600 font-medium">
+                    <span>Receivables (Customer Credits)</span>
+                    <span className="font-bold text-slate-800">₹{reportData.assets?.receivables?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-4 mt-2 border-t border-dashed font-black text-lg text-brand-600">
+                    <span>Total Assets</span>
+                    <span>₹{reportData.assets?.totalAssets?.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center py-2 text-slate-600 font-medium">
-                  <span>Receivables (Customer Credits)</span>
-                  <span>₹{reportData.assets?.receivables?.toFixed(2)}</span>
+             </div>
+
+             {/* Liabilities */}
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300 delay-75">
+                <h3 className="text-lg font-black text-slate-800 border-b pb-4 mb-4 flex justify-between">
+                  <span>Liabilities</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payables & Obligations</span>
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-1 text-slate-600 font-medium">
+                    <span>Supplier Payables (Unsettled Bills)</span>
+                    <span className="font-bold text-slate-800">₹{reportData.liabilities?.payables?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-4 mt-2 border-t border-dashed font-black text-lg text-red-600">
+                    <span>Total Liabilities</span>
+                    <span>₹{reportData.liabilities?.totalLiabilities?.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center py-4 mt-2 border-t font-black text-lg text-slate-900">
-                  <span>Total Assets</span>
-                  <span>₹{reportData.assets?.totalAssets?.toFixed(2)}</span>
+             </div>
+
+             {/* Equity */}
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 bg-brand-50/50 border-brand-100 animate-in fade-in slide-in-from-bottom-4 duration-300 delay-150">
+                <h3 className="text-lg font-black text-slate-800 border-b border-brand-100 pb-4 mb-4 flex justify-between">
+                  <span>Equity & Capital</span>
+                  <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">Net Worth</span>
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-1 text-slate-600 font-medium">
+                    <span>Capital Net Worth (Assets - Liabilities)</span>
+                    <span className={`font-black ${reportData.equity?.netWorth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ₹{reportData.equity?.netWorth?.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-4 mt-2 border-t border-brand-100 font-black text-lg text-slate-900">
+                    <span>Total Liabilities & Equity</span>
+                    <span>₹{reportData.equity?.totalLiabilitiesAndEquity?.toFixed(2)}</span>
+                  </div>
                 </div>
              </div>
           </div>
