@@ -479,6 +479,7 @@ model RestaurantSettings {
   parcelCharge       Float    @default(0)
   deliveryCharge     Float    @default(0)
   printerSize        String   @default("80mm") // 58mm, 80mm
+  maxDiscountPercent Float    @default(10)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

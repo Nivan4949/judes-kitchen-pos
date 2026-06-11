@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, QrCode, CreditCard, Banknote, User, Gift, Plus, BadgePercent } from 'lucide-react';
 import NumericKeypad from '../components/NumericKeypad';
 import usePOSStore from '../store/posStore';
+import useRestaurantStore from '../store/restaurantStore';
 import CustomerSelectionModal from './CustomerSelectionModal';
 import RedeemPointsModal from './RedeemPointsModal';
 
@@ -12,7 +13,10 @@ interface PaymentModalProps {
 
 const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose }) => {
   const { cart, customer, setCustomer, getTotals, loyaltyPointsRedeemed, appliedPoints, setLoyaltyDiscount, setManualDiscount } = usePOSStore();
+  const { settings } = useRestaurantStore();
   const { subtotal, taxTotal, grandTotal, roundedTotal, loyaltyDiscount, manualDiscount } = getTotals();
+
+  const maxDiscountPercent = settings?.maxDiscountPercent ?? 10;
   
   const [amountPaid, setAmountPaid] = useState(roundedTotal.toString());
   const [isAmountCustom, setIsAmountCustom] = useState(false);
@@ -173,7 +177,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
                </div>
                <div>
                   <span className="text-sm font-bold text-slate-800 block leading-tight">Apply Extra Disc.</span>
-                  <span className="text-[10px] text-slate-400 font-bold block">Limit 10% (₹{Math.floor((subtotal + taxTotal) * 0.10)})</span>
+                  <span className="text-[10px] text-slate-400 font-bold block">Limit {maxDiscountPercent}% (₹{Math.floor((subtotal + taxTotal) * (maxDiscountPercent / 100))})</span>
                </div>
             </div>
             <div className="relative">
@@ -185,9 +189,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
                  placeholder="0.00"
                  onChange={(e) => {
                    let val = parseFloat(e.target.value) || 0;
-                   const absoluteMax = Math.floor((subtotal + taxTotal) * 0.10);
+                   const absoluteMax = Math.floor((subtotal + taxTotal) * (maxDiscountPercent / 100));
                    if (val > absoluteMax) {
-                     alert(`Max custom discount allowed is 10% of subtotal (₹${absoluteMax}). Need more? Use loyalty points.`);
+                     alert(`Max custom discount allowed is ${maxDiscountPercent}% of subtotal (₹${absoluteMax}).`);
                      val = absoluteMax;
                    } else if (val < 0) {
                      val = 0;

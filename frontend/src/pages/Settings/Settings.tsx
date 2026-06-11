@@ -17,7 +17,8 @@ const Settings = () => {
         gstRate: 5,
         parcelCharge: 0,
         deliveryCharge: 0,
-        printerSize: '80mm'
+        printerSize: '80mm',
+        maxDiscountPercent: 10
     });
 
     const { connect, disconnect, isConnected, isConnecting, device, error: bluetoothError, print } = useBluetoothPrinter();
@@ -135,7 +136,8 @@ const Settings = () => {
                 gstRate: settings.gstRate ?? 5.0,
                 parcelCharge: settings.parcelCharge ?? 0,
                 deliveryCharge: settings.deliveryCharge ?? 0,
-                printerSize: settings.printerSize || '80mm'
+                printerSize: settings.printerSize || '80mm',
+                maxDiscountPercent: settings.maxDiscountPercent ?? 10.0
             });
         }
     }, [settings]);
@@ -1170,6 +1172,24 @@ const Settings = () => {
                                             className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
                                             value={restaurantForm.deliveryCharge}
                                             onChange={(e) => setRestaurantForm({...restaurantForm, deliveryCharge: parseFloat(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Max Discount (%)</label>
+                                        <input 
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            max="100"
+                                            className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary text-center"
+                                            value={restaurantForm.maxDiscountPercent}
+                                            onChange={(e) => {
+                                                let val = parseFloat(e.target.value);
+                                                if (isNaN(val)) val = 0;
+                                                if (val > 100) val = 100;
+                                                if (val < 0) val = 0;
+                                                setRestaurantForm({...restaurantForm, maxDiscountPercent: val});
+                                            }}
                                         />
                                     </div>
                                 </div>

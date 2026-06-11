@@ -45,7 +45,8 @@ async function autoSeedDatabase() {
         gstRate: 5.0,
         parcelCharge: 10.0,
         deliveryCharge: 30.0,
-        printerSize: "80mm"
+        printerSize: "80mm",
+        maxDiscountPercent: 10.0
       }
     });
 
