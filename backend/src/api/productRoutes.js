@@ -125,6 +125,44 @@ router.put('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   }
 });
 
+// Patch product (Partial update, e.g. for status toggle)
+router.patch('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = {};
+    
+    // Copy only defined fields from body
+    const fields = [
+      'name', 'barcode', 'categoryId', 'brand', 'purchasePrice', 
+      'sellingPrice', 'mrp', 'gstRate', 'stockQuantity', 'unit', 
+      'supplier', 'image', 'is_active', 'foodType', 'availability', 
+      'variants', 'addons', 'preparationTime', 'kitchenDept', 'recipe'
+    ];
+    
+    fields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        if (['purchasePrice', 'sellingPrice', 'mrp', 'gstRate', 'stockQuantity'].includes(field)) {
+          updateData[field] = parseFloat(req.body[field]) || 0;
+        } else if (field === 'preparationTime') {
+          updateData[field] = parseInt(req.body[field]) || 0;
+        } else if (field === 'availability' || field === 'is_active') {
+          updateData[field] = Boolean(req.body[field]);
+        } else {
+          updateData[field] = req.body[field];
+        }
+      }
+    });
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: updateData
+    });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete product (Smart Delete: Soft-delete if history exists)
 router.delete('/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   try {

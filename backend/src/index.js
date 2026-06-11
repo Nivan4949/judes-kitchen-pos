@@ -29,12 +29,7 @@ async function autoSeedDatabase() {
     // Ensure default settings exist
     await prisma.restaurantSettings.upsert({
       where: { id: 'settings' },
-      update: {
-        name: "JUDE'S KITCHEN",
-        address: "DHOTTAPPANKULAM,SULTHAN BATHERY,WAYANAD",
-        phone: "+91 89431 21110",
-        gstin: ""
-      },
+      update: {},
       create: {
         id: 'settings',
         name: "JUDE'S KITCHEN",
@@ -105,19 +100,7 @@ async function autoSeedDatabase() {
     for (const item of items) {
       await prisma.product.upsert({
         where: { barcode: item.barcode },
-        update: {
-          name: item.name,
-          sellingPrice: item.price,
-          mrp: item.price,
-          purchasePrice: item.price * 0.6,
-          categoryId: item.categoryId,
-          foodType: item.foodType,
-          kitchenDept: item.kitchenDept,
-          preparationTime: item.preparationTime,
-          stockQuantity: 999,
-          availability: true,
-          is_active: true
-        },
+        update: {},
         create: {
           name: item.name,
           barcode: item.barcode,
