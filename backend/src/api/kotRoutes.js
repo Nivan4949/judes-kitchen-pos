@@ -51,9 +51,23 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Calculate KOT Number
-      const kotCountAll = await tx.kOT.count();
-      const kotNo = `KOT-${(kotCountAll + 1).toString().padStart(3, '0')}`;
+      // 1. Calculate KOT Number (Robust sequential generator)
+      const latestKots = await tx.kOT.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: { kotNo: true }
+      });
+      let maxNum = 0;
+      latestKots.forEach(k => {
+        const match = k.kotNo.match(/^KOT-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) {
+            maxNum = num;
+          }
+        }
+      });
+      const kotNo = `KOT-${(maxNum + 1).toString().padStart(3, '0')}`;
 
       // 2. Repeat Order Logic: Find previous KOT items for this orderId (if it exists)
       let itemsToSubmit = [];

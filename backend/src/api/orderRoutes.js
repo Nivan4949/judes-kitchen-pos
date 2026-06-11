@@ -997,12 +997,23 @@ router.post('/:id/approve', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, r
         });
       }
 
-      // Generate a KOT automatically for this order
-      const nextKotNumRaw = await tx.$queryRaw`
-        SELECT COUNT(*) as count FROM "KOT"
-      `;
-      const nextKotNum = Number(nextKotNumRaw[0]?.count || 0) + 1;
-      const kotNo = `KOT-${nextKotNum}`;
+      // Generate a KOT automatically for this order (Robust sequential generator)
+      const latestKots = await tx.kOT.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: { kotNo: true }
+      });
+      let maxNum = 0;
+      latestKots.forEach(k => {
+        const match = k.kotNo.match(/^KOT-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) {
+            maxNum = num;
+          }
+        }
+      });
+      const kotNo = `KOT-${(maxNum + 1).toString().padStart(3, '0')}`;
 
       await tx.kOT.create({
         data: {
