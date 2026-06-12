@@ -175,12 +175,17 @@ const Reports = () => {
             });
 
             // 2.b Filter unsynced orders by dateFilter using shifted business day boundaries (6:00 PM start)
+            const OUTLET_TZ_OFFSET = -330; // Fixed offset for India Standard Time (IST)
             const now = new Date();
-            const shifted = new Date(now.getTime() - (18 * 60 * 60 * 1000));
-            const D = new Date(shifted.getFullYear(), shifted.getMonth(), shifted.getDate());
+            const outletTimeMs = now.getTime() - (OUTLET_TZ_OFFSET * 60000);
+            const shifted = new Date(outletTimeMs - (18 * 60 * 60 * 1000));
+            const D = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
             
-            const bizTodayStart = new Date(D.getTime() + (18 * 60 * 60 * 1000));
-            const bizTodayEnd = new Date(D.getTime() + (42 * 60 * 60 * 1000) - 1);
+            const bizTodayStartLocal = new Date(D.getTime() + (18 * 60 * 60 * 1000));
+            const bizTodayEndLocal = new Date(D.getTime() + (42 * 60 * 60 * 1000) - 1);
+
+            const bizTodayStart = new Date(bizTodayStartLocal.getTime() + (OUTLET_TZ_OFFSET * 60000));
+            const bizTodayEnd = new Date(bizTodayEndLocal.getTime() + (OUTLET_TZ_OFFSET * 60000));
 
             if (dateFilter === 'Today') {
               unsynced = unsynced.filter(o => {
@@ -207,13 +212,17 @@ const Reports = () => {
                  return d >= monthStart && d <= bizTodayEnd;
                });
             } else if (dateFilter === 'Custom' && customStart && customEnd) {
-               const start = new Date(customStart);
-               const startD = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-               const bizCustomStart = new Date(startD.getTime() + (18 * 60 * 60 * 1000));
+               const parseYYYYMMDD = (str: string) => {
+                 const parts = str.split('-');
+                 return new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)));
+               };
+               const startD = parseYYYYMMDD(customStart);
+               const bizCustomStartLocal = new Date(startD.getTime() + (18 * 60 * 60 * 1000));
+               const bizCustomStart = new Date(bizCustomStartLocal.getTime() + (OUTLET_TZ_OFFSET * 60000));
 
-               const end = new Date(customEnd);
-               const endD = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-               const bizCustomEnd = new Date(endD.getTime() + (42 * 60 * 60 * 1000) - 1);
+               const endD = parseYYYYMMDD(customEnd);
+               const bizCustomEndLocal = new Date(endD.getTime() + (42 * 60 * 60 * 1000) - 1);
+               const bizCustomEnd = new Date(bizCustomEndLocal.getTime() + (OUTLET_TZ_OFFSET * 60000));
 
                unsynced = unsynced.filter(o => {
                  const d = new Date(o.createdAt || o.date);

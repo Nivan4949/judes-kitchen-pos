@@ -1,5 +1,9 @@
-const getDateRange = (filter, startDate, endDate, timezoneOffset = 0) => {
-  // timezoneOffset is in minutes (e.g. -330 for IST)
+const getDateRange = (filter, startDate, endDate, clientTimezoneOffset = 0) => {
+  // Use a fixed timezone offset representing the outlet's physical timezone.
+  // Default to -330 (IST, UTC+5:30) but allow override via environment variable.
+  const timezoneOffset = process.env.TIMEZONE_OFFSET !== undefined 
+    ? parseInt(process.env.TIMEZONE_OFFSET) 
+    : -330; 
   const now = new Date();
   
   // Calculate client's current local time in milliseconds
