@@ -7,12 +7,29 @@ import './index.css'
 import usePOSStore from './store/posStore';
 
 // ONE-TIME SAFETY WIPE (Self-Cleaning for Data Reset)
-if (localStorage.getItem('pos_reset_state') !== '2026-04-12') {
+if (localStorage.getItem('pos_reset_state') !== '2026-06-12') {
   console.log('New Deployment: Clearing local cache to sync with empty database...');
   localStorage.clear();
   sessionStorage.clear();
-  localStorage.setItem('pos_reset_state', '2026-04-12');
+  localStorage.setItem('pos_reset_state', '2026-06-12');
   window.location.reload();
+}
+
+// Service Worker update check helper to force client PWA refresh
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.ready.then((registration) => {
+    // Check for updates immediately on load
+    registration.update().catch((err) => {
+      console.warn('Service worker update check failed:', err);
+    });
+
+    // Check for updates periodically (every 5 minutes)
+    setInterval(() => {
+      registration.update().catch((err) => {
+        console.warn('Service worker periodic update check failed:', err);
+      });
+    }, 5 * 60 * 1000);
+  });
 }
 
 const MainApp = () => {
