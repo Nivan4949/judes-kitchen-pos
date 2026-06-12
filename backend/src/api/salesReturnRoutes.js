@@ -4,6 +4,7 @@ const prisma = require('../config/prisma');
 const auth = require('../middleware/auth');
 const whatsappUtil = require('../utils/whatsappUtil');
 const pdfUtil = require('../utils/pdfUtil');
+const { getDateRange } = require('../utils/dateUtil');
 
 // GET sales return as PDF (Public for WhatsApp API - ABSOLUTE TOP PRIORITY)
 router.get('/:id/pdf', async (req, res) => {
@@ -126,18 +127,11 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
 // Get all sales returns with filtering
 router.get('/', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
   try {
-    const { startDate, endDate, filter } = req.query;
+    const { startDate, endDate, filter, timezoneOffset } = req.query;
     let where = {};
 
-    if (startDate && endDate) {
-      where.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate)
-      };
-    } else if (filter === 'Today') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      where.createdAt = { gte: today };
+    if (filter || (startDate && endDate)) {
+      where.createdAt = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
     }
 
     const returns = await prisma.salesReturn.findMany({

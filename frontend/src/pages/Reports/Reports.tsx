@@ -172,32 +172,50 @@ const Reports = () => {
               return !o.isSynced && isNotOnServer;
             });
 
-            // 2.b Filter unsynced orders by dateFilter
+            // 2.b Filter unsynced orders by dateFilter using shifted business day boundaries (6:00 PM start)
             const now = new Date();
-            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const shifted = new Date(now.getTime() - (18 * 60 * 60 * 1000));
+            const D = new Date(shifted.getFullYear(), shifted.getMonth(), shifted.getDate());
+            
+            const bizTodayStart = new Date(D.getTime() + (18 * 60 * 60 * 1000));
+            const bizTodayEnd = new Date(D.getTime() + (42 * 60 * 60 * 1000) - 1);
+
             if (dateFilter === 'Today') {
-              unsynced = unsynced.filter(o => new Date(o.createdAt || o.date) >= todayStart);
+              unsynced = unsynced.filter(o => {
+                const d = new Date(o.createdAt || o.date);
+                return d >= bizTodayStart && d <= bizTodayEnd;
+              });
             } else if (dateFilter === 'Yesterday') {
-              const yesterdayStart = new Date(todayStart.getTime() - 86400000);
-              const yesterdayEnd = new Date(todayStart.getTime() - 1);
+              const yesterdayStart = new Date(bizTodayStart.getTime() - (24 * 60 * 60 * 1000));
+              const yesterdayEnd = new Date(bizTodayEnd.getTime() - (24 * 60 * 60 * 1000));
               unsynced = unsynced.filter(o => {
                 const d = new Date(o.createdAt || o.date);
                 return d >= yesterdayStart && d <= yesterdayEnd;
               });
-            } else if (dateFilter === 'This Week') {
-               const weekStart = new Date(todayStart);
-               weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-               unsynced = unsynced.filter(o => new Date(o.createdAt || o.date) >= weekStart);
-            } else if (dateFilter === 'This Month') {
-               const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-               unsynced = unsynced.filter(o => new Date(o.createdAt || o.date) >= monthStart);
-            } else if (dateFilter === 'Custom' && customStart && customEnd) {
-               const start = new Date(customStart);
-               const end = new Date(customEnd);
-               end.setHours(23,59,59,999);
+            } else if (dateFilter === 'Week' || dateFilter === 'This Week') {
+               const weekStart = new Date(bizTodayStart.getTime() - (6 * 24 * 60 * 60 * 1000));
                unsynced = unsynced.filter(o => {
                  const d = new Date(o.createdAt || o.date);
-                 return d >= start && d <= end;
+                 return d >= weekStart && d <= bizTodayEnd;
+               });
+            } else if (dateFilter === 'Month' || dateFilter === 'This Month') {
+               const monthStart = new Date(bizTodayStart.getTime() - (29 * 24 * 60 * 60 * 1000));
+               unsynced = unsynced.filter(o => {
+                 const d = new Date(o.createdAt || o.date);
+                 return d >= monthStart && d <= bizTodayEnd;
+               });
+            } else if (dateFilter === 'Custom' && customStart && customEnd) {
+               const start = new Date(customStart);
+               const startD = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+               const bizCustomStart = new Date(startD.getTime() + (18 * 60 * 60 * 1000));
+
+               const end = new Date(customEnd);
+               const endD = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+               const bizCustomEnd = new Date(endD.getTime() + (42 * 60 * 60 * 1000) - 1);
+
+               unsynced = unsynced.filter(o => {
+                 const d = new Date(o.createdAt || o.date);
+                 return d >= bizCustomStart && d <= bizCustomEnd;
                });
             }
 

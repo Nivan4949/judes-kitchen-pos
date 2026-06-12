@@ -13,49 +13,18 @@ function logError(context, err) {
 }
 module.exports.logError = logError; // Export for orderRoutes.js
 
-// Helper to handle date filters with Timezone awareness
-const getDateRange = (filter, startDate, endDate, timezoneOffset = 0) => {
-  // timezoneOffset is in minutes (e.g. -330 for IST)
-  const now = new Date();
-  
-  // Calculate start and end in client's local time
-  let start = new Date(now.getTime() - (timezoneOffset * 60000));
-  start.setUTCHours(0, 0, 0, 0);
-  let end = new Date(now.getTime() - (timezoneOffset * 60000));
-  end.setUTCHours(23, 59, 59, 999);
-
-  if (filter === 'Today') {
-    // Already set to local today
-  } else if (filter === 'Week') {
-    start.setUTCDate(start.getUTCDate() - 7);
-  } else if (filter === 'Month') {
-    start.setUTCDate(start.getUTCDate() - 30);
-  } else if (filter === 'Custom' && startDate && endDate) {
-    start = new Date(startDate);
-    start.setUTCHours(0, 0, 0, 0);
-    end = new Date(endDate);
-    end.setUTCHours(23, 59, 59, 999);
-  } else {
-    start = new Date('2020-01-01');
-  }
-
-  // Convert back to UTC for Prisma/Database query
-  const queryStart = new Date(start.getTime() + (timezoneOffset * 60000));
-  const queryEnd = new Date(end.getTime() + (timezoneOffset * 60000));
-
-  return { gte: queryStart, lte: queryEnd };
-};
+const { getDateRange } = require('../utils/dateUtil');
 
 // 0. Dashboard Summary for Admin
 router.get('/summary', async (req, res) => {
   try {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const { timezoneOffset } = req.query;
+    const dateRange = getDateRange('Today', null, null, parseInt(timezoneOffset || 0));
 
     // Today's Sales
     const todaySalesData = await prisma.order.aggregate({
       where: {
-        createdAt: { gte: todayStart },
+        createdAt: dateRange,
         status: { not: 'CANCELLED' }
       },
       _sum: { roundedTotal: true }
@@ -65,7 +34,7 @@ router.get('/summary', async (req, res) => {
     // Running Orders Count (unpaid orders)
     const runningOrdersCount = await prisma.order.count({
       where: {
-        createdAt: { gte: todayStart },
+        createdAt: dateRange,
         status: 'PENDING'
       }
     });
@@ -132,7 +101,7 @@ router.get('/summary', async (req, res) => {
     // Payment Summary Today
     const todayPayments = await prisma.payment.findMany({
       where: {
-        createdAt: { gte: todayStart }
+        createdAt: dateRange
       }
     });
 
@@ -896,6 +865,18 @@ router.get('/expenses', async (req, res) => {
 router.get('/transactions', async (req, res) => {
   const queryString = new URLSearchParams(req.query).toString();
   res.redirect(`/api/reports/daybook?${queryString}`);
+});
+
+// Credit Note Report Alias
+router.get('/credit-notes', async (req, res) => {
+  const queryString = new URLSearchParams(req.query).toString();
+  res.redirect(`/api/sales-returns?${queryString}`);
+});
+
+// Debit Note Report Alias
+router.get('/debit-notes', async (req, res) => {
+  const queryString = new URLSearchParams(req.query).toString();
+  res.redirect(`/api/purchase-returns?${queryString}`);
 });
 
 // 15. Stock Detail

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const prisma = require('../config/prisma');
 const auth = require('../middleware/auth');
+const { getDateRange } = require('../utils/dateUtil');
 
 // Create new purchase return (Debit Note)
 router.post('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
@@ -78,18 +78,11 @@ router.post('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
 // Get all purchase returns with filtering
 router.get('/', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   try {
-    const { startDate, endDate, filter } = req.query;
+    const { startDate, endDate, filter, timezoneOffset } = req.query;
     let where = {};
 
-    if (startDate && endDate) {
-      where.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate)
-      };
-    } else if (filter === 'Today') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      where.createdAt = { gte: today };
+    if (filter || (startDate && endDate)) {
+      where.createdAt = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
     }
 
     const returns = await prisma.purchaseReturn.findMany({

@@ -45,7 +45,8 @@ const AdminDashboard = () => {
     const fetchStats = async () => {
         try {
             setRefreshing(true);
-            const response = await api.get('/reports/summary');
+            const offset = new Date().getTimezoneOffset();
+            const response = await api.get(`/reports/summary?timezoneOffset=${offset}`);
             setStats(prev => ({ ...prev, ...response.data }));
         } catch (error) {
             console.error('Dashboard Error:', error);
