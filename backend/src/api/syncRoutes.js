@@ -26,10 +26,9 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
         const loyaltyPointsEarned = Math.floor(orderData.grandTotal / earnRate);
         const loyaltyPointsRedeemed = orderData.loyaltyPointsRedeemed || 0;
 
-        // Determine unique invoice number (Trust client first, then safe server fallback)
+        // 1. Determine unique invoice number (Trust client first, then safe server fallback)
         let invoiceNo = orderData.invoiceNo;
-        const existingNum = await tx.order.findUnique({ where: { invoiceNo: String(orderData.invoiceNo) } });
-        if (existingNum) {
+        if (!invoiceNo || invoiceNo === 'undefined' || invoiceNo === 'null') {
           const rawMax = await tx.$queryRaw`
             SELECT MAX(CAST("invoiceNo" AS INTEGER)) as "maxNum" 
             FROM "Order" 
@@ -37,38 +36,86 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
           `;
           const maxNum = Number(rawMax[0]?.maxNum) || 99;
           invoiceNo = (maxNum + 1).toString();
+        } else {
+          const existingNum = await tx.order.findUnique({ where: { invoiceNo: String(invoiceNo) } });
+          if (existingNum) {
+            const rawMax = await tx.$queryRaw`
+              SELECT MAX(CAST("invoiceNo" AS INTEGER)) as "maxNum" 
+              FROM "Order" 
+              WHERE "invoiceNo" ~ '^[0-9]+$' AND "invoiceNo" NOT LIKE '9%'
+            `;
+            const maxNum = Number(rawMax[0]?.maxNum) || 99;
+            invoiceNo = (maxNum + 1).toString();
+          }
+        }
+
+        // 2. Validate customerId exists
+        let customerId = orderData.customerId || null;
+        if (customerId) {
+          const customerExists = await tx.customer.findUnique({ where: { id: customerId } });
+          if (!customerExists) {
+            customerId = null;
+          }
+        }
+
+        // 3. Validate creatorId exists
+        let creatorId = orderData.creatorId || req.user.id;
+        if (creatorId) {
+          const userExists = await tx.user.findUnique({ where: { id: creatorId } });
+          if (!userExists) {
+            creatorId = req.user.id;
+          }
+        }
+
+        // 4. Validate and construct order items
+        const orderItemsToCreate = [];
+        const validOrderItemsForInventory = [];
+
+        for (const item of orderData.orderItems) {
+          const pid = item.productId || item.id;
+          const productExists = await tx.product.findUnique({ where: { id: pid } });
+          if (productExists) {
+            orderItemsToCreate.push({
+              productId: pid,
+              quantity: item.quantity,
+              price: item.price || item.sellingPrice,
+              taxAmount: ((item.price || item.sellingPrice) * ((item.gstRate || 0) / 100)) * item.quantity,
+              total: ((item.price || item.sellingPrice) * item.quantity) + (((item.price || item.sellingPrice) * ((item.gstRate || 0) / 100)) * item.quantity)
+            });
+            validOrderItemsForInventory.push({ pid, quantity: item.quantity });
+          } else {
+            console.warn(`Product ${pid} not found in DB during sync, skipping item.`);
+          }
+        }
+
+        if (orderItemsToCreate.length === 0) {
+          throw new Error('Sync Order failed: No valid products found in database for order items.');
         }
 
         const order = await tx.order.create({
           data: {
             invoiceNo: invoiceNo,
             serverId: orderData.id,
-            customerId: orderData.customerId,
+            customerId: customerId,
             subtotal: orderData.subtotal,
             taxTotal: orderData.taxTotal,
             grandTotal: orderData.grandTotal,
             roundedTotal: orderData.roundedTotal || Math.floor(orderData.grandTotal),
             amountPaid: Number(orderData.amountPaid) || 0,
             balance: Number(orderData.balance) || 0,
-            paymentMode: orderData.paymentMode,
+            paymentMode: orderData.paymentMode || 'CASH',
             loyaltyPointsEarned,
             loyaltyPointsRedeemed,
             status: 'COMPLETED',
             isSynced: true,
-            creatorId: orderData.creatorId || req.user.id,
+            creatorId: creatorId,
             createdAt: new Date(orderData.createdAt || Date.now()),
             orderItems: {
-              create: orderData.orderItems.map(item => ({
-                productId: item.productId || item.id,
-                quantity: item.quantity,
-                price: item.price || item.sellingPrice,
-                taxAmount: ((item.price || item.sellingPrice) * ((item.gstRate || 0) / 100)) * item.quantity,
-                total: ((item.price || item.sellingPrice) * item.quantity) + (((item.price || item.sellingPrice) * ((item.gstRate || 0) / 100)) * item.quantity)
-              }))
+              create: orderItemsToCreate
             },
             payments: {
               create: {
-                method: orderData.paymentMode,
+                method: orderData.paymentMode || 'CASH',
                 amount: Number(orderData.amountPaid) || 0,
                 status: 'SUCCESS'
               }
@@ -76,17 +123,16 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
           }
         });
 
-        // Deduct inventory and log it
-        for (const item of orderData.orderItems) {
-          const pid = item.productId || item.id;
+        // 5. Deduct inventory and log it for valid items
+        for (const item of validOrderItemsForInventory) {
           await tx.product.update({
-            where: { id: pid },
+            where: { id: item.pid },
             data: { stockQuantity: { decrement: item.quantity } }
           });
           
           await tx.inventoryLog.create({
             data: {
-              productId: pid,
+              productId: item.pid,
               type: 'OUT',
               quantity: item.quantity,
               reason: `Offline Order ${invoiceNo}`
@@ -94,10 +140,10 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
           });
         }
 
-        // Update customer loyalty points and total spent
-        if (orderData.customerId) {
+        // 6. Update customer loyalty points and total spent
+        if (customerId) {
           await tx.customer.update({
-            where: { id: orderData.customerId },
+            where: { id: customerId },
             data: {
               loyaltyPoints: {
                 increment: loyaltyPointsEarned,

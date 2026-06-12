@@ -9,6 +9,8 @@ import CreditSettlementModal from '../../components/CreditSettlementModal';
 import { Coins } from 'lucide-react';
 import { offlineDB } from '../../utils/offlineDB';
 import useNetworkStatus from '../../hooks/useNetworkStatus';
+import { processSyncQueue } from '../../utils/syncQueue';
+import { RefreshCw } from 'lucide-react';
 
 const reportCategories = [
   {
@@ -1792,6 +1794,30 @@ const Reports = () => {
                 </select>
               </div>
             )}
+
+            <button
+              onClick={async () => {
+                if (!isOnline) {
+                  alert('You are offline. Please connect to the internet to sync.');
+                  return;
+                }
+                try {
+                  setLoading(true);
+                  await processSyncQueue();
+                  await fetchReport();
+                  alert('Sync process completed successfully!');
+                } catch (e: any) {
+                  alert('Sync failed: ' + e.message);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100/50 rounded-xl font-black text-xs transition-all shadow-sm font-sans"
+              title="Force Sync Offline Bills to Database"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              SYNC OFFLINE BILLS
+            </button>
           </div>
         </div>
 
