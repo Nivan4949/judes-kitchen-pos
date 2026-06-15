@@ -69,6 +69,7 @@ export const exportUtils = {
       head: [config.headers],
       body: config.data,
       foot: config.footers ? config.footers : undefined,
+      showFoot: 'lastPage',
       theme: 'striped',
       headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 10, fontStyle: 'bold' },
       footStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 10, fontStyle: 'bold' },
