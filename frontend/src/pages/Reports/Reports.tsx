@@ -405,10 +405,10 @@ const Reports = () => {
                   new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                   t.type,
                   t.details,
-                  `${t.amount >= 0 ? '+' : '-'}Rs.${Math.abs(t.amount).toFixed(2)}`
+                  `Rs.${t.amount >= 0 ? '+' : '-'}${Math.abs(t.amount).toFixed(2)}`
                 ]);
                 const netBalance = reportData.netBalance || 0;
-                footers = [['Total (Net Flow)', '', '', '', `${netBalance >= 0 ? '+' : '-'}Rs.${Math.abs(netBalance).toFixed(2)}`]];
+                footers = [['Total (Net Flow)', '', '', '', `Rs.${netBalance >= 0 ? '+' : '-'}${Math.abs(netBalance).toFixed(2)}`]];
                 break;
               }
 
@@ -418,12 +418,12 @@ const Reports = () => {
                 const isNetLoss = (reportData.netProfit || 0) < 0;
                 data = [
                   ['Total Sales', `Rs.${(reportData.salesAmount || 0).toFixed(2)}`],
-                  ['Cost of Goods Sold (COGS)', `-Rs.${(reportData.cogs || 0).toFixed(2)}`],
-                  [isLoss ? 'Gross Loss' : 'Gross Profit', `${isLoss ? '-' : ''}Rs.${Math.abs(reportData.grossProfit || 0).toFixed(2)}`],
-                  ['Total Expenses', `-Rs.${(reportData.expenses || 0).toFixed(2)}`],
-                  [isNetLoss ? 'Net Loss' : 'Net Profit', `${isNetLoss ? '-' : ''}Rs.${Math.abs(reportData.netProfit || 0).toFixed(2)}`]
+                  ['Cost of Goods Sold (COGS)', `Rs.-${(reportData.cogs || 0).toFixed(2)}`],
+                  [isLoss ? 'Gross Loss' : 'Gross Profit', `Rs.${isLoss ? '-' : ''}${Math.abs(reportData.grossProfit || 0).toFixed(2)}`],
+                  ['Total Expenses', `Rs.-${(reportData.expenses || 0).toFixed(2)}`],
+                  [isNetLoss ? 'Net Loss' : 'Net Profit', `Rs.${isNetLoss ? '-' : ''}${Math.abs(reportData.netProfit || 0).toFixed(2)}`]
                 ];
-                footers = [[isNetLoss ? 'Net Loss' : 'Net Profit', `${isNetLoss ? '-' : ''}Rs.${Math.abs(reportData.netProfit || 0).toFixed(2)}`]];
+                footers = [[isNetLoss ? 'Net Loss' : 'Net Profit', `Rs.${isNetLoss ? '-' : ''}${Math.abs(reportData.netProfit || 0).toFixed(2)}`]];
                 break;
               }
 

@@ -174,7 +174,7 @@ export class EscPosBuilder {
     }
 
     if (order.discount > 0) {
-      builder.line(`Discount : -Rs. ${Number(order.discount).toFixed(2)}`);
+      builder.line(`Discount : Rs. -${Number(order.discount).toFixed(2)}`);
     }
 
     builder.bold(true)
