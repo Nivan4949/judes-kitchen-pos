@@ -331,13 +331,14 @@ const Reports = () => {
         try {
             let headers: string[] = [];
             let data: any[][] = [];
+            let footers: string[][] = [];
             let title = reportCategories.flatMap(c => c.reports).find(r => r.id === activeReport)?.name || 'Report';
             const filename = `${activeReport}_${new Date().toISOString().split('T')[0]}`;
 
             // 1. Format Data Based on Active Report
             switch (activeReport) {
               case 'sales':
-              case 'purchase':
+              case 'purchase': {
                 headers = ['Date', 'Invoice', activeReport === 'sales' ? 'Customer' : 'Supplier', 'Amount'];
                 data = reportData.details.map((item: any) => [
                   new Date(item.createdAt || item.date).toLocaleDateString(),
@@ -345,9 +346,12 @@ const Reports = () => {
                   activeReport === 'sales' ? (item.customer?.name || 'Walk-in') : item.supplierName,
                   `Rs.${item.grandTotal.toFixed(2)}`
                 ]);
+                const totalAmt = reportData.details.reduce((sum: number, item: any) => sum + (item.grandTotal || 0), 0);
+                footers = [['Total', '', '', `Rs.${totalAmt.toFixed(2)}`]];
                 break;
+              }
 
-              case 'credit-sales':
+              case 'credit-sales': {
                 headers = ['Date', 'Invoice', 'Customer', 'Billed', 'Paid', 'Balance'];
                 data = reportData.details.map((item: any) => [
                   new Date(item.createdAt).toLocaleDateString(),
@@ -357,30 +361,119 @@ const Reports = () => {
                   `Rs.${item.amountPaid.toFixed(2)}`,
                   `Rs.${item.balance.toFixed(2)}`
                 ]);
+                const totalBilled = reportData.details.reduce((sum: number, item: any) => sum + (item.grandTotal || 0), 0);
+                const totalPaid = reportData.details.reduce((sum: number, item: any) => sum + (item.amountPaid || 0), 0);
+                const totalBalance = reportData.details.reduce((sum: number, item: any) => sum + (item.balance || 0), 0);
+                footers = [['Total', '', '', `Rs.${totalBilled.toFixed(2)}`, `Rs.${totalPaid.toFixed(2)}`, `Rs.${totalBalance.toFixed(2)}`]];
                 break;
+              }
 
-              case 'stock-summary':
-                headers = ['ID', 'Name', 'Category', 'Stock', 'Price'];
+              case 'payment-summary': {
+                headers = ['Payment Mode', 'Total Amount', 'Share (%)'];
+                const total = Object.values(reportData).reduce((s: any, a: any) => s + a, 0) as number;
+                data = Object.entries(reportData).map(([mode, amount]: any) => {
+                  const share = total > 0 ? (amount / total) * 100 : 0;
+                  return [
+                    mode.toUpperCase(),
+                    `Rs.${amount.toFixed(2)}`,
+                    `${share.toFixed(1)}%`
+                  ];
+                });
+                footers = [['Total Combined Revenue', `Rs.${total.toFixed(2)}`, '100.0%']];
+                break;
+              }
+
+              case 'daybook':
+              case 'transactions':
+              case 'cashflow': {
+                headers = ['Date', 'Time', 'Type', 'Details', 'Amount'];
+                data = (reportData.transactions || []).map((t: any) => [
+                  new Date(t.date).toLocaleDateString(),
+                  new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                  t.type,
+                  t.details,
+                  `${t.amount >= 0 ? '+' : '-'}Rs.${Math.abs(t.amount).toFixed(2)}`
+                ]);
+                const netBalance = reportData.netBalance || 0;
+                footers = [['Total (Net Flow)', '', '', '', `${netBalance >= 0 ? '+' : '-'}Rs.${Math.abs(netBalance).toFixed(2)}`]];
+                break;
+              }
+
+              case 'profit-loss': {
+                headers = ['Financial Metric', 'Amount'];
+                const isLoss = (reportData.grossProfit || 0) < 0;
+                const isNetLoss = (reportData.netProfit || 0) < 0;
+                data = [
+                  ['Total Sales', `Rs.${(reportData.salesAmount || 0).toFixed(2)}`],
+                  ['Cost of Goods Sold (COGS)', `-Rs.${(reportData.cogs || 0).toFixed(2)}`],
+                  [isLoss ? 'Gross Loss' : 'Gross Profit', `${isLoss ? '-' : ''}Rs.${Math.abs(reportData.grossProfit || 0).toFixed(2)}`],
+                  ['Total Expenses', `-Rs.${(reportData.expenses || 0).toFixed(2)}`],
+                  [isNetLoss ? 'Net Loss' : 'Net Profit', `${isNetLoss ? '-' : ''}Rs.${Math.abs(reportData.netProfit || 0).toFixed(2)}`]
+                ];
+                footers = [[isNetLoss ? 'Net Loss' : 'Net Profit', `${isNetLoss ? '-' : ''}Rs.${Math.abs(reportData.netProfit || 0).toFixed(2)}`]];
+                break;
+              }
+
+              case 'credit-notes':
+              case 'debit-notes': {
+                const isCreditNote = activeReport === 'credit-notes';
+                headers = ['Date', 'Return No', isCreditNote ? 'Customer' : 'Supplier', 'Amount'];
+                data = (reportData.details || []).map((item: any) => [
+                  new Date(item.createdAt).toLocaleDateString(),
+                  item.returnNo,
+                  isCreditNote ? (item.customer?.name || 'Walk-in') : (item.supplierName || 'N/A'),
+                  `Rs.${(item.totalAmount || 0).toFixed(2)}`
+                ]);
+                const totalReturns = reportData.summary?.totalReturns || 0;
+                footers = [['Total', '', '', `Rs.${totalReturns.toFixed(2)}`]];
+                break;
+              }
+
+              case 'parties': {
+                headers = ['Party Name', 'Phone', 'Loyalty Pts', 'Credit Bal', 'Total Spent'];
                 data = reportData.map((item: any) => [
-                  item.id.slice(0, 8),
                   item.name,
-                  item.category?.name || 'N/A',
-                  item.stockQuantity,
-                  `Rs.${item.sellingPrice}`
+                  item.phone || '-',
+                  item.loyaltyPoints || 0,
+                  `Rs.${(item.creditBalance || 0).toFixed(2)}`,
+                  `Rs.${(item.totalSpent || 0).toFixed(2)}`
                 ]);
+                const sumPoints = reportData.reduce((sum: number, item: any) => sum + (item.loyaltyPoints || 0), 0);
+                const sumCredit = reportData.reduce((sum: number, item: any) => sum + (item.creditBalance || 0), 0);
+                const sumSpent = reportData.reduce((sum: number, item: any) => sum + (item.totalSpent || 0), 0);
+                footers = [['Total', '', sumPoints, `Rs.${sumCredit.toFixed(2)}`, `Rs.${sumSpent.toFixed(2)}`]];
                 break;
+              }
 
-              case 'expenses':
-                headers = ['Date', 'Category', 'Amount', 'Description'];
-                data = reportData.details.map((item: any) => [
-                  new Date(item.date).toLocaleDateString(),
-                  item.category,
-                  `Rs.${item.amount}`,
-                  item.description || '-'
+              case 'party-statement': {
+                headers = ['Date', 'Invoice', 'Status', 'Amount'];
+                data = (reportData.orders || []).map((item: any) => [
+                  new Date(item.createdAt).toLocaleDateString(),
+                  item.invoiceNo,
+                  item.status,
+                  `Rs.${(item.grandTotal || 0).toFixed(2)}`
                 ]);
+                const sumAmount = (reportData.orders || []).reduce((sum: number, item: any) => sum + (item.grandTotal || 0), 0);
+                footers = [['Total Spent', '', '', `Rs.${sumAmount.toFixed(2)}`]];
+                title = `Statement: ${reportData.name}`;
                 break;
+              }
 
-              case 'supplier-ledger':
+              case 'suppliers': {
+                headers = ['Supplier Name', 'Total Purchases', 'Total Balance', 'Last Purchase'];
+                data = reportData.map((s: any) => [
+                  s.name,
+                  `Rs.${(s.totalPurchases || 0).toFixed(2)}`,
+                  `Rs.${(s.totalBalance || 0).toFixed(2)}`,
+                  s.lastPurchase ? new Date(s.lastPurchase).toLocaleDateString() : 'N/A'
+                ]);
+                const sumPurchases = reportData.reduce((sum: number, s: any) => sum + (s.totalPurchases || 0), 0);
+                const sumBalance = reportData.reduce((sum: number, s: any) => sum + (s.totalBalance || 0), 0);
+                footers = [['Total', `Rs.${sumPurchases.toFixed(2)}`, `Rs.${sumBalance.toFixed(2)}`, '']];
+                break;
+              }
+
+              case 'supplier-ledger': {
                 headers = ['Date', 'Invoice', 'Status', 'Bill Amt', 'Balance'];
                 data = (reportData.purchases || []).map((p: any) => [
                   new Date(p.date || p.createdAt).toLocaleDateString(),
@@ -389,28 +482,97 @@ const Reports = () => {
                   `Rs.${p.grandTotal.toFixed(2)}`,
                   `Rs.${p.balanceDue.toFixed(2)}`
                 ]);
+                const sumBillAmt = (reportData.purchases || []).reduce((sum: number, p: any) => sum + (p.grandTotal || 0), 0);
+                const sumBalance = (reportData.purchases || []).reduce((sum: number, p: any) => sum + (p.balanceDue || 0), 0);
+                footers = [['Total', '', '', `Rs.${sumBillAmt.toFixed(2)}`, `Rs.${sumBalance.toFixed(2)}`]];
                 title = `Ledger: ${reportData.name}`;
                 break;
+              }
 
-              case 'waiter-sales':
+              case 'stock-summary': {
+                headers = ['Item Name', 'In Stock', 'Cost Price', 'Retail Price'];
+                data = (reportData.details || []).map((item: any) => [
+                  item.name,
+                  item.stockQuantity || 0,
+                  `Rs.${(item.purchasePrice || 0).toFixed(2)}`,
+                  `Rs.${(item.sellingPrice || 0).toFixed(2)}`
+                ]);
+                const totalStockQty = (reportData.details || []).reduce((sum: number, item: any) => sum + (item.stockQuantity || 0), 0);
+                footers = [['Total Qty / Values', totalStockQty, `Rs.${(reportData.summary?.totalStockValue || 0).toFixed(2)}`, `Rs.${(reportData.summary?.totalRetailValue || 0).toFixed(2)}`]];
+                break;
+              }
+
+              case 'item-profit': {
+                headers = ['Item Name', 'Qty Sold', 'Sales Revenue', 'COGS / Cost', 'Net Profit'];
+                data = reportData.map((item: any) => [
+                  item.name,
+                  item.qtySold || 0,
+                  `Rs.${(item.totalSales || item.revenue || 0).toFixed(2)}`,
+                  `Rs.${(item.cogs || item.cost || 0).toFixed(2)}`,
+                  `Rs.${(item.profit || 0).toFixed(2)}`
+                ]);
+                const sumQty = reportData.reduce((sum: number, item: any) => sum + (item.qtySold || 0), 0);
+                const sumRevenue = reportData.reduce((sum: number, item: any) => sum + (item.totalSales || item.revenue || 0), 0);
+                const sumCOGS = reportData.reduce((sum: number, item: any) => sum + (item.cogs || item.cost || 0), 0);
+                const sumProfit = reportData.reduce((sum: number, item: any) => sum + (item.profit || 0), 0);
+                footers = [['Total', sumQty, `Rs.${sumRevenue.toFixed(2)}`, `Rs.${sumCOGS.toFixed(2)}`, `Rs.${sumProfit.toFixed(2)}`]];
+                break;
+              }
+
+              case 'stock-detail': {
+                headers = ['Date', 'Type', 'Quantity', 'Reason'];
+                data = (reportData.inventoryLogs || []).map((log: any) => [
+                  new Date(log.createdAt).toLocaleString(),
+                  log.type,
+                  `${log.type === 'IN' ? '+' : '-'}${log.quantity}`,
+                  log.reason || '-'
+                ]);
+                const totalIn = (reportData.inventoryLogs || []).filter((log: any) => log.type === 'IN').reduce((sum: number, log: any) => sum + (log.quantity || 0), 0);
+                const totalOut = (reportData.inventoryLogs || []).filter((log: any) => log.type === 'OUT').reduce((sum: number, log: any) => sum + (log.quantity || 0), 0);
+                footers = [['Net Change', '', `IN: +${totalIn} | OUT: -${totalOut}`, '']];
+                title = `Stock Detail: ${reportData.name}`;
+                break;
+              }
+
+              case 'expenses': {
+                headers = ['Date', 'Category', 'Amount', 'Description'];
+                data = reportData.details.map((item: any) => [
+                  new Date(item.date).toLocaleDateString(),
+                  item.category,
+                  `Rs.${item.amount.toFixed(2)}`,
+                  item.description || '-'
+                ]);
+                footers = [['Total Expenses', '', `Rs.${(reportData.total || 0).toFixed(2)}`, '']];
+                break;
+              }
+
+              case 'waiter-sales': {
                 headers = ['Waiter Name', 'Order Count', 'Total Sales'];
                 data = reportData.map((item: any) => [
                   item.name,
                   item.orderCount,
                   `Rs.${item.totalSales.toFixed(2)}`
                 ]);
+                const sumOrders = reportData.reduce((sum: number, item: any) => sum + (item.orderCount || 0), 0);
+                const sumSales = reportData.reduce((sum: number, item: any) => sum + (item.totalSales || 0), 0);
+                footers = [['Total', sumOrders, `Rs.${sumSales.toFixed(2)}`]];
                 break;
+              }
 
-              case 'table-sales':
+              case 'table-sales': {
                 headers = ['Table Name', 'Order Count', 'Total Sales'];
                 data = reportData.map((item: any) => [
                   item.number,
                   item.orderCount,
                   `Rs.${item.totalSales.toFixed(2)}`
                 ]);
+                const sumOrders = reportData.reduce((sum: number, item: any) => sum + (item.orderCount || 0), 0);
+                const sumSales = reportData.reduce((sum: number, item: any) => sum + (item.totalSales || 0), 0);
+                footers = [['Total', sumOrders, `Rs.${sumSales.toFixed(2)}`]];
                 break;
+              }
 
-              case 'kot-reports':
+              case 'kot-reports': {
                 headers = ['Date', 'KOT No', 'Table', 'Waiter', 'Status', 'Items Count'];
                 data = reportData.map((kot: any) => [
                   new Date(kot.createdAt).toLocaleString(),
@@ -420,9 +582,12 @@ const Reports = () => {
                   kot.status,
                   kot.items?.length || 0
                 ]);
+                const sumItems = reportData.reduce((sum: number, kot: any) => sum + (kot.items?.length || 0), 0);
+                footers = [['Total KOTs: ' + reportData.length, '', '', '', '', 'Total Items: ' + sumItems]];
                 break;
+              }
 
-              case 'cancelled-items':
+              case 'cancelled-items': {
                 headers = ['Date', 'Item Name', 'KOT No', 'Table/Waiter', 'Qty Cancelled', 'Reason'];
                 data = reportData.map((item: any) => [
                   new Date(item.createdAt || item.kot?.createdAt).toLocaleString(),
@@ -432,9 +597,12 @@ const Reports = () => {
                   item.quantity,
                   item.cancelReason || item.notes || 'No reason'
                 ]);
+                const sumCancelledQty = reportData.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+                footers = [['Total Cancelled', '', '', '', sumCancelledQty, '']];
                 break;
+              }
 
-              case 'discounts-report':
+              case 'discounts-report': {
                 headers = ['Date', 'Invoice', 'Discount Given', 'Bill Total', 'Authorized By'];
                 data = reportData.map((order: any) => [
                   new Date(order.createdAt).toLocaleDateString(),
@@ -443,9 +611,13 @@ const Reports = () => {
                   `Rs.${order.grandTotal.toFixed(2)}`,
                   order.creator?.name || 'Staff'
                 ]);
+                const sumDiscounts = reportData.reduce((sum: number, order: any) => sum + (order.discount || 0), 0);
+                const sumGrandTotal = reportData.reduce((sum: number, order: any) => sum + (order.grandTotal || 0), 0);
+                footers = [['Total', '', `Rs.${sumDiscounts.toFixed(2)}`, `Rs.${sumGrandTotal.toFixed(2)}`, '']];
                 break;
+              }
 
-              case 'balance-sheet':
+              case 'balance-sheet': {
                 headers = ['Account Category', 'Line Item', 'Amount'];
                 data = [
                   ['ASSETS', 'Cash & Bank Balance', `Rs.${(reportData.assets?.cashBalance || 0).toFixed(2)}`],
@@ -457,7 +629,9 @@ const Reports = () => {
                   ['EQUITY', 'Capital Net Worth', `Rs.${(reportData.equity?.netWorth || 0).toFixed(2)}`],
                   ['EQUITY', 'TOTAL LIABILITIES & EQUITY', `Rs.${(reportData.equity?.totalLiabilitiesAndEquity || 0).toFixed(2)}`]
                 ];
+                footers = [];
                 break;
+              }
 
               default:
                 // Generic fallback for any other list of objects
@@ -472,14 +646,18 @@ const Reports = () => {
 
             // 2. Trigger Export
             if (format === 'CSV') {
-                const csvData = data.map(row => {
+                const combinedData = [...data];
+                if (footers && footers.length > 0) {
+                    combinedData.push(...footers);
+                }
+                const csvData = combinedData.map(row => {
                     const obj: any = {};
                     headers.forEach((h, i) => obj[h] = row[i]);
                     return obj;
                 });
-                exportUtils.exportToCSV(csvData.length > 0 ? csvData : reportData, filename);
+                exportUtils.exportToCSV(csvData, filename);
             } else {
-                exportUtils.exportToPDF({ title, headers, data, filename });
+                exportUtils.exportToPDF({ title, headers, data, footers, filename });
             }
         } catch (error) {
             console.error('Export Failed:', error);

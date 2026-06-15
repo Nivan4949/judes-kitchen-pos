@@ -43,7 +43,7 @@ export const exportUtils = {
   /**
    * Export Table Data to PDF using jspdf-autotable
    */
-  exportToPDF: (config: { title: string, headers: string[], data: any[][], filename: string }) => {
+  exportToPDF: (config: { title: string, headers: string[], data: any[][], footers?: string[][], filename: string }) => {
     const doc = new jsPDF() as any;
 
     // 1. Add Header / Branding
@@ -68,8 +68,10 @@ export const exportUtils = {
       startY: 60,
       head: [config.headers],
       body: config.data,
+      foot: config.footers ? config.footers : undefined,
       theme: 'striped',
       headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 10, fontStyle: 'bold' },
+      footStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 10, fontStyle: 'bold' },
       bodyStyles: { fontSize: 9 },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       margin: { top: 60 },
