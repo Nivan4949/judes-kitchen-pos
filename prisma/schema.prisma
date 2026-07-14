@@ -163,6 +163,7 @@ model Customer {
 model Order {
   id                    String      @id @default(uuid())
   invoiceNo             String      @unique
+  orderNo               Int?
   customer              Customer?   @relation(fields: [customerId], references: [id])
   customerId            String?
   subtotal              Float

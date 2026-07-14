@@ -96,8 +96,11 @@ export class EscPosBuilder {
 
     // Order Info
     builder.alignLeft()
-           .line(`Invoice : ${order.invoiceNo || 'N/A'}`)
-           .line(`Date    : ${new Date(order.createdAt || Date.now()).toLocaleString()}`)
+           .line(`Invoice : ${order.invoiceNo || 'N/A'}`);
+    if (order.orderNo) {
+      builder.line(`Order No: ${order.orderNo}`);
+    }
+    builder.line(`Date    : ${new Date(order.createdAt || Date.now()).toLocaleString()}`)
            .line(`Cust    : ${order.customer?.name || 'Walk-in'}`)
            .line(`Mode    : ${order.orderType || 'Dine-in'}`);
 

@@ -3,6 +3,39 @@ const router = express.Router();
 const prisma = require('../config/prisma');
 const auth = require('../middleware/auth');
 
+// Calculate next daily order number resetting at 5:00 AM local time
+async function getNextOrderNo(tx, createdAt) {
+  const dt = new Date(createdAt);
+  
+  // Create a copy to calculate today's 5:00 AM local time boundary
+  const today5AM = new Date(dt);
+  today5AM.setHours(5, 0, 0, 0);
+  
+  let workingDayStart = new Date(today5AM);
+  if (dt < today5AM) {
+    workingDayStart.setDate(workingDayStart.getDate() - 1);
+  }
+  
+  const maxOrder = await tx.order.findFirst({
+    where: {
+      createdAt: {
+        gte: workingDayStart
+      },
+      orderNo: {
+        not: null
+      }
+    },
+    orderBy: {
+      orderNo: 'desc'
+    },
+    select: {
+      orderNo: true
+    }
+  });
+  
+  return (maxOrder?.orderNo || 0) + 1;
+}
+
 // Bulk sync endpoints
 router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
   const { orders } = req.body;
@@ -92,9 +125,13 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
           throw new Error('Sync Order failed: No valid products found in database for order items.');
         }
 
+        const orderCreatedAt = new Date(orderData.createdAt || Date.now());
+        const orderNo = await getNextOrderNo(tx, orderCreatedAt);
+
         const order = await tx.order.create({
           data: {
             invoiceNo: invoiceNo,
+            orderNo: orderNo,
             serverId: orderData.id,
             customerId: customerId,
             subtotal: orderData.subtotal,
@@ -109,7 +146,7 @@ router.post('/orders', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) =
             status: 'COMPLETED',
             isSynced: true,
             creatorId: creatorId,
-            createdAt: new Date(orderData.createdAt || Date.now()),
+            createdAt: orderCreatedAt,
             orderItems: {
               create: orderItemsToCreate
             },

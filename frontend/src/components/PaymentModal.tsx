@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, QrCode, CreditCard, Banknote, User, Gift, Plus, BadgePercent } from 'lucide-react';
+import { X, CheckCircle2, QrCode, CreditCard, Banknote, User, Gift, Plus, BadgePercent, RefreshCw } from 'lucide-react';
 import NumericKeypad from '../components/NumericKeypad';
 import usePOSStore from '../store/posStore';
 import useRestaurantStore from '../store/restaurantStore';
 import CustomerSelectionModal from './CustomerSelectionModal';
 import RedeemPointsModal from './RedeemPointsModal';
+import useNetworkStatus from '../hooks/useNetworkStatus';
+import { processSyncQueue } from '../utils/syncQueue';
 
 interface PaymentModalProps {
   onPaymentComplete: (method: string, amount: string, orderType: string) => Promise<void>;
@@ -15,6 +17,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
   const { cart, customer, setCustomer, getTotals, loyaltyPointsRedeemed, appliedPoints, setLoyaltyDiscount, setManualDiscount } = usePOSStore();
   const { settings } = useRestaurantStore();
   const { subtotal, taxTotal, grandTotal, roundedTotal, loyaltyDiscount, manualDiscount } = getTotals();
+
+  const isOnline = useNetworkStatus();
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const maxDiscountPercent = settings?.maxDiscountPercent ?? 10;
   
@@ -111,7 +116,32 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ onPaymentComplete, onClose 
         {/* Left Side: Summary & Options */}
         <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col gap-4 md:gap-5 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 md:overflow-y-auto md:custom-scrollbar">
           <div className="flex justify-between items-center shrink-0">
-            <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">Checkout</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">Checkout</h2>
+              <button
+                onClick={async () => {
+                  if (!isOnline) {
+                    alert('You are offline. Please connect to the internet to sync.');
+                    return;
+                  }
+                  try {
+                    setIsSyncing(true);
+                    await processSyncQueue();
+                    alert('Sync process completed successfully!');
+                  } catch (e: any) {
+                    alert('Sync failed: ' + e.message);
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }}
+                disabled={isSyncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100/50 rounded-xl font-black text-[10px] tracking-wider uppercase transition-all shadow-sm disabled:opacity-50"
+                title="Force Sync Offline Bills to Database"
+              >
+                <RefreshCw size={12} className={isSyncing ? "animate-spin" : ""} />
+                <span>{isSyncing ? 'Syncing...' : 'Sync Offline'}</span>
+              </button>
+            </div>
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
               <X size={24} className="text-slate-500" />
             </button>

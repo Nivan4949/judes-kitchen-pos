@@ -10,6 +10,39 @@ const logError = (context, err) => {
   console.error(`[Order API Debug] ${context}:`, err);
 };
 
+// Calculate next daily order number resetting at 5:00 AM local time
+async function getNextOrderNo(tx, createdAt) {
+  const dt = new Date(createdAt);
+  
+  // Create a copy to calculate today's 5:00 AM local time boundary
+  const today5AM = new Date(dt);
+  today5AM.setHours(5, 0, 0, 0);
+  
+  let workingDayStart = new Date(today5AM);
+  if (dt < today5AM) {
+    workingDayStart.setDate(workingDayStart.getDate() - 1);
+  }
+  
+  const maxOrder = await tx.order.findFirst({
+    where: {
+      createdAt: {
+        gte: workingDayStart
+      },
+      orderNo: {
+        not: null
+      }
+    },
+    orderBy: {
+      orderNo: 'desc'
+    },
+    select: {
+      orderNo: true
+    }
+  });
+  
+  return (maxOrder?.orderNo || 0) + 1;
+}
+
 // GET order as PDF (Public for WhatsApp API - ABSOLUTE TOP PRIORITY)
 router.get('/:id/pdf', async (req, res) => {
   try {
@@ -169,6 +202,10 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
           invoiceNo = (maxNum + 1).toString();
       }
 
+      // Calculate order number starting from 1 every working day
+      const orderCreatedAt = new Date();
+      const orderNo = await getNextOrderNo(tx, orderCreatedAt);
+
       // 3. Validation
       for (const item of orderItems) {
         const pid = item.productId || item.id;
@@ -184,6 +221,8 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
       const orderBaseData = {
         id: id || undefined, // Respect the Client's Optimistic ID
         invoiceNo,
+        orderNo,
+        createdAt: orderCreatedAt,
         customerId,
         subtotal,
         discount,

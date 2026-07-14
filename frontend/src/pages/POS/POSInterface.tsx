@@ -10,7 +10,7 @@ import PaymentModal from '../../components/PaymentModal';
 import ReceiptPreview from '../../components/ReceiptPreview';
 import { Product, CartItem } from '../../types';
 import { offlineDB } from '../../utils/offlineDB';
-import { addToSyncQueue } from '../../utils/syncQueue';
+import { addToSyncQueue, processSyncQueue } from '../../utils/syncQueue';
 import useNetworkStatus from '../../hooks/useNetworkStatus';
 import { useBluetoothPrinter } from '../../hooks/useBluetoothPrinter';
 import { EscPosBuilder } from '../../utils/escPosUtil';
@@ -419,6 +419,8 @@ const POSInterface: React.FC = () => {
 
   const handlePaymentComplete = async (method: string, amount: string, orderMode: string = 'Walk-in') => {
     if (cart.length === 0) return;
+    if (isSyncing) return;
+    setIsSyncing(true);
 
     const totals = getTotals();
     const { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal, roundedTotal, savings } = totals;
@@ -513,27 +515,24 @@ const POSInterface: React.FC = () => {
         console.error('Local persistence failed:', err);
       }
       
-      // 2. UI TRANSITION (INSTANT)
-      setRecentOrder(finalOrderData);
-      clearCart();
-      setIsPaymentModalOpen(false);
-      setIsPreviewOpen(true);
-
-      // 3. TRUE BACKGROUND SERVER SYNC
+      // 2. SERVER SYNC & UI TRANSITION
       if (isOnline) {
-        const syncPromise = activeOrderId
-          ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
-          : api.post('/orders', orderData, {
-              headers: { 'x-terminal-id': 'T1' },
-              skipAuthRedirect: true
-            } as any);
+        try {
+          const syncPromise = activeOrderId
+            ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
+            : api.post('/orders', orderData, {
+                headers: { 'x-terminal-id': 'T1' },
+                skipAuthRedirect: true
+              } as any);
 
-        syncPromise.then(response => {
+          const response = await syncPromise;
           const syncedData = { ...orderData, ...response.data, isSyncing: false, isSynced: true };
-          offlineDB.put('orders', syncedData).catch(() => {});
+          await offlineDB.put('orders', syncedData).catch(() => {});
           
-          // Silently update live receipt state if it's still open
-          setRecentOrder(prev => prev?.id === finalOrderData.id ? syncedData : prev);
+          setRecentOrder(syncedData);
+          clearCart();
+          setIsPaymentModalOpen(false);
+          setIsPreviewOpen(true);
           
           // Fire WhatsApp ONLY after successful sync completion
           if (syncedData.customer?.phone) {
@@ -543,17 +542,30 @@ const POSInterface: React.FC = () => {
              }, { skipAuthRedirect: true } as any).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
           }
           fetchTables(); // Refresh tables layout state
-        }).catch(async (error) => {
+        } catch (error) {
           console.error('Checkout Sync Failed, added to queue:', error);
           await addToSyncQueue('CREATE_ORDER', orderData);
-        });
+          
+          // Fallback to optimistic state if sync fails
+          setRecentOrder(finalOrderData);
+          clearCart();
+          setIsPaymentModalOpen(false);
+          setIsPreviewOpen(true);
+        }
       } else {
+        // Offline queueing
         await addToSyncQueue('CREATE_ORDER', orderData);
+        setRecentOrder(finalOrderData);
+        clearCart();
+        setIsPaymentModalOpen(false);
+        setIsPreviewOpen(true);
       }
       
     } catch (error: any) {
       console.error('Critical Layout Error:', error);
       alert('A critical error occurred while attempting to process the layout.');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -655,6 +667,7 @@ const POSInterface: React.FC = () => {
 
   const handleSendKot = async () => {
     if (cart.length === 0) return;
+    if (loading) return;
 
     if (orderType === 'Dine-in') {
       if (!tableId) {
@@ -818,6 +831,36 @@ const POSInterface: React.FC = () => {
             <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`}></div>
             <span className="hidden xs:block tracking-[0.15em]">{isOnline ? 'CLOUD CONNECTED' : 'OFFLINE MODE'}</span>
           </div>
+
+          <button
+            onClick={async () => {
+              if (!isOnline) {
+                alert('You are offline. Please connect to the internet to sync.');
+                return;
+              }
+              try {
+                setIsSyncing(true);
+                await processSyncQueue();
+                alert('Sync process completed successfully!');
+              } catch (e: any) {
+                alert('Sync failed: ' + e.message);
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black border transition-all ${
+              isSyncing 
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-wait' 
+                : 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary'
+            } hover:bg-white/5 disabled:opacity-70`}
+            title="Force Sync Offline Bills to Database"
+          >
+            <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
+            <span className="hidden xs:block tracking-[0.15em]">
+              {isSyncing ? 'SYNCING...' : 'SYNC OFFLINE'}
+            </span>
+          </button>
 
           <button 
             onClick={() => isConnected ? disconnect() : connect().catch(() => {})}

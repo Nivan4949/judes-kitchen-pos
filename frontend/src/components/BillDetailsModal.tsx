@@ -130,7 +130,10 @@ const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ billId, type, onClo
         <div className="p-8 border-b border-slate-100 flex justify-between items-center">
             <div>
                 <h2 className="text-xl font-black text-slate-900">{bill.invoiceNo}</h2>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mt-1">
+                {type === 'SALE' && bill.orderNo && (
+                    <p className="text-xs font-bold text-slate-500 mt-0.5">Order No: #{bill.orderNo}</p>
+                )}
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mt-1.5">
                     <Calendar size={12}/> {new Date(bill.createdAt || bill.date).toLocaleString()}
                 </p>
             </div>
