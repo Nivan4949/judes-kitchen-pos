@@ -60,8 +60,23 @@ const POSInterface: React.FC = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
+  const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const ALPHABET = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+
+  const availableLetters = React.useMemo(() => {
+    const set = new Set<string>();
+    allProducts.forEach(p => {
+      const firstChar = p.name.trim().charAt(0).toUpperCase();
+      if (/[A-Z]/.test(firstChar)) {
+        set.add(firstChar);
+      }
+    });
+    return set;
+  }, [allProducts]);
+
 
   // Modals / Selection states
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
@@ -208,7 +223,12 @@ const POSInterface: React.FC = () => {
     }
   };
 
-  const applyFilters = (query: string, catId: string | null, list: Product[] = allProducts) => {
+  const applyFilters = (
+    query: string, 
+    catId: string | null, 
+    list: Product[] = allProducts,
+    letterFilter: string | null = selectedLetter
+  ) => {
     let filtered = [...list];
     
     if (query) {
@@ -223,130 +243,40 @@ const POSInterface: React.FC = () => {
       filtered = filtered.filter(p => p.categoryId === catId);
     }
     
+    if (letterFilter && letterFilter !== 'ALL') {
+      filtered = filtered.filter(p => 
+        p.name.trim().toUpperCase().startsWith(letterFilter)
+      );
+    }
+
+    // Always sort products alphabetically A-Z
+    filtered.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+    
     setFilteredProducts(filtered);
   };
 
-  const fetchWaiters = async () => {
-    try {
-      const res = await api.get('/auth/users');
-      const userList = res.data;
-      const waiterList = userList.filter((u: any) => u.role === 'WAITER');
-      setWaiters(waiterList.length > 0 ? waiterList : userList);
-    } catch (err) {
-      console.error('Failed to fetch waiters:', err);
-    }
-  };
-
-  const parseJsonField = (field: any) => {
-    if (!field) return [];
-    if (typeof field === 'string') {
-      try {
-        return JSON.parse(field);
-      } catch (e) {
-        return [];
-      }
-    }
-    return field;
-  };
-
-  const handleProductSelect = (product: Product) => {
-    const productVariants = parseJsonField(product.variants);
-    const productAddons = parseJsonField(product.addons);
-    
-    if (productVariants.length > 0 || productAddons.length > 0) {
-      setCustomizingProduct(product);
-      setSelectedVariant(productVariants.length > 0 ? productVariants[0] : null);
-      setSelectedModifiers([]);
-      setCustomizationQty(1);
-      setItemNotesInput('');
-    } else {
-      addToCart(product, 1);
-    }
-  };
-
-  useEffect(() => {
-    fetchCategories();
-    fetchProducts();
-    fetchTables();
-    fetchSections();
-    fetchWaiters();
-    fetchSettings();
-    fetchPendingQrRequests();
-    checkActiveShift();
-    
-    // Connect Real-Time socket notifications
-    const socketUrl = `${window.location.protocol}//${window.location.host}`;
-    const socket = io(socketUrl, {
-      transports: ['polling', 'websocket'],
-      autoConnect: true
-    });
-
-    socket.on('QR_ORDER_REQUESTED', (order: any) => {
-      setPendingQrRequests(prev => {
-        if (prev.some(r => r.id === order.id)) return prev;
-        return [order, ...prev];
-      });
-      try {
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-200.wav');
-        audio.play().catch(() => {});
-      } catch (e) {}
-    });
-
-    socket.on('QR_ORDER_PROCESSED', ({ id }: { id: string }) => {
-      setPendingQrRequests(prev => prev.filter(r => r.id !== id));
-    });
-
-    // Initialize last invoice number from DB once
-    const initInvoiceNo = async () => {
-      const orders = await offlineDB.getAll('orders');
-      if (orders.length > 0) {
-        const numericInvoices = orders
-          .map(o => parseInt(o.invoiceNo))
-          .filter(n => !isNaN(n) && n < 9000);
-        if (numericInvoices.length > 0) {
-          const max = Math.max(...numericInvoices);
-          localStorage.setItem('last_invoice_no', max.toString());
-        }
-      }
-    };
-    initInvoiceNo();
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
-
-  // Trigger auto-charge updates based on order mode and subtotal
-  useEffect(() => {
-    if (!settings) return;
-    
-    const { subtotal } = getTotals();
-    let parcelCharge = 0;
-    let deliveryCharge = 0;
-
-    if (orderType === 'Takeaway') {
-      parcelCharge = settings.parcelCharge || 0;
-    } else if (orderType === 'Delivery') {
-      deliveryCharge = settings.deliveryCharge || 0;
-    }
-
-    usePOSStore.getState().setCharges({
-      parcelCharge,
-      deliveryCharge
-    });
-  }, [orderType, cart, settings]);
-
-
   const handleCategorySelect = (id: string | null) => {
     setSelectedCategoryId(id);
-    applyFilters(search, id);
+    if (id !== null) {
+      setSelectedLetter(null);
+      applyFilters(search, id, allProducts, null);
+    } else {
+      applyFilters(search, id, allProducts, selectedLetter);
+    }
+  };
+
+  const handleLetterSelect = (char: string) => {
+    const newLetter = (char === 'ALL' || selectedLetter === char) ? null : char;
+    setSelectedLetter(newLetter);
+    applyFilters(search, selectedCategoryId, allProducts, newLetter);
   };
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearch(val);
-    applyFilters(val, selectedCategoryId);
+    applyFilters(val, selectedCategoryId, allProducts, selectedLetter);
   };
+
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -981,6 +911,45 @@ const POSInterface: React.FC = () => {
               </button>
             ))}
           </div>
+
+          {/* Alphabet Search Bar (Visible when ALL ITEMS selected) */}
+          {selectedCategoryId === null && (
+            <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide select-none shrink-0 items-center bg-white/50 p-1.5 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 whitespace-nowrap hidden sm:inline">
+                A-Z Index:
+              </span>
+              {ALPHABET.map((char) => {
+                const isSelected = char === 'ALL' ? selectedLetter === null : selectedLetter === char;
+                const hasItems = char === 'ALL' || availableLetters.has(char);
+                return (
+                  <button
+                    key={char}
+                    onClick={() => handleLetterSelect(char)}
+                    disabled={!hasItems && char !== 'ALL'}
+                    className={`min-w-[2.2rem] h-8 px-2 rounded-lg font-bold text-xs uppercase transition-all flex items-center justify-center whitespace-nowrap border ${
+                      isSelected
+                        ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/30 border-brand-primary font-black scale-105'
+                        : hasItems
+                        ? 'bg-white text-slate-700 hover:bg-brand-50 border-slate-200 hover:border-brand-300 shadow-sm'
+                        : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed opacity-50'
+                    }`}
+                  >
+                    {char}
+                  </button>
+                );
+              })}
+              {selectedLetter && (
+                <button
+                  onClick={() => handleLetterSelect('ALL')}
+                  className="px-2.5 h-8 rounded-lg font-bold text-[10px] uppercase bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 whitespace-nowrap ml-1 flex items-center gap-1 shrink-0"
+                  title="Clear Letter Filter"
+                >
+                  <X size={12} /> Clear ({selectedLetter})
+                </button>
+              )}
+            </div>
+          )}
+
 
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto pr-1 md:pr-2 pb-24 lg:pb-0 custom-scrollbar">
