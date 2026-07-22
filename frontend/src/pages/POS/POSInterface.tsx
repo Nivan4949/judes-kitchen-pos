@@ -64,7 +64,7 @@ const POSInterface: React.FC = () => {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const ALPHABET = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+  const ALPHABET = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '#'];
 
   const availableLetters = React.useMemo(() => {
     const set = new Set<string>();
@@ -72,10 +72,23 @@ const POSInterface: React.FC = () => {
       const firstChar = p.name.trim().charAt(0).toUpperCase();
       if (/[A-Z]/.test(firstChar)) {
         set.add(firstChar);
+      } else {
+        set.add('#');
       }
     });
     return set;
   }, [allProducts]);
+
+  const groupedProducts = React.useMemo(() => {
+    const groups: { [key: string]: Product[] } = {};
+    filteredProducts.forEach(product => {
+      const firstChar = product.name.trim().charAt(0).toUpperCase();
+      const key = /[A-Z]/.test(firstChar) ? firstChar : '#';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(product);
+    });
+    return groups;
+  }, [filteredProducts]);
 
 
   // Modals / Selection states
@@ -1002,22 +1015,76 @@ const POSInterface: React.FC = () => {
           )}
 
 
-          {/* Product Grid */}
-          <div className="flex-1 overflow-y-auto pr-1 md:pr-2 pb-24 lg:pb-0 custom-scrollbar">
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+          {/* Product Container with iOS-style Right Vertical Alphabet Index Bar */}
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Product List / Section Grid */}
+            <div className="flex-1 overflow-y-auto pr-2 pb-24 lg:pb-0 custom-scrollbar space-y-4">
               {loading ? (
-                <div className="col-span-full text-center py-10 md:py-20 text-slate-400 animate-pulse">Loading...</div>
+                <div className="text-center py-20 text-slate-400 animate-pulse font-medium">Loading products...</div>
               ) : filteredProducts.length > 0 ? (
-                filteredProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onSelect={handleProductSelect}
-                  />
+                Object.keys(groupedProducts).sort().map(letterKey => (
+                  <div key={letterKey} id={`section-${letterKey}`} className="space-y-2">
+                    {/* iOS Style Letter Group Header */}
+                    <div className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-md py-1.5 px-3 border-y border-slate-200/80 flex items-center justify-between shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-brand-primary text-white text-[10px] font-black flex items-center justify-center shadow-sm">
+                          {letterKey}
+                        </span>
+                        <span className="font-black text-xs text-slate-700 uppercase tracking-widest">
+                          {letterKey === '#' ? 'Numbers / Others' : letterKey}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {groupedProducts[letterKey].length} item{groupedProducts[letterKey].length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 px-1">
+                      {groupedProducts[letterKey].map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onSelect={handleProductSelect}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))
               ) : (
-                <div className="col-span-full text-center py-20 text-slate-400">No products</div>
+                <div className="text-center py-20 text-slate-400 font-medium">No products found</div>
               )}
+            </div>
+
+            {/* iOS Contacts-style Vertical Alphabet Index Bar */}
+            <div className="w-6 sm:w-7 bg-white/80 backdrop-blur-md border-l border-slate-200/80 flex flex-col items-center justify-between py-1 select-none shrink-0 z-20 rounded-r-xl text-[9px] sm:text-[10px] font-black shadow-sm">
+              {ALPHABET.map((char) => {
+                const isSelected = char === 'ALL' ? selectedLetter === null : selectedLetter === char;
+                const hasItems = char === 'ALL' || availableLetters.has(char);
+
+                return (
+                  <button
+                    key={char}
+                    onClick={() => {
+                      handleLetterSelect(char);
+                      if (char !== 'ALL') {
+                        const el = document.getElementById(`section-${char}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
+                    disabled={!hasItems && char !== 'ALL'}
+                    title={char === 'ALL' ? 'Show All Products' : `Filter / Jump to ${char}`}
+                    className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center leading-none transition-all ${
+                      isSelected
+                        ? 'bg-brand-primary text-white shadow-md font-black scale-110'
+                        : hasItems
+                        ? 'text-brand-primary hover:bg-brand-50 hover:scale-110 cursor-pointer font-bold'
+                        : 'text-slate-300 opacity-30 cursor-not-allowed font-normal'
+                    }`}
+                  >
+                    {char === 'ALL' ? '•' : char}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
