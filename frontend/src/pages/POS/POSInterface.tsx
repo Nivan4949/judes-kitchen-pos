@@ -976,9 +976,9 @@ const POSInterface: React.FC = () => {
             ))}
           </div>
 
-          {/* Alphabet Search Bar (Visible when ALL ITEMS selected) */}
+          {/* Alphabet Search Bar (Visible when ALL ITEMS selected on desktop; hidden on mobile) */}
           {selectedCategoryId === null && (
-            <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide select-none shrink-0 items-center bg-white/50 p-1.5 rounded-xl border border-slate-200/80">
+            <div className="hidden sm:flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide select-none shrink-0 items-center bg-white/50 p-1.5 rounded-xl border border-slate-200/80">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 whitespace-nowrap hidden sm:inline">
                 A-Z Index:
               </span>
