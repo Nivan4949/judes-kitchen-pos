@@ -278,6 +278,57 @@ const POSInterface: React.FC = () => {
   };
 
 
+  const parseJsonField = (field: any) => {
+    if (!field) return [];
+    if (Array.isArray(field)) return field;
+    if (typeof field === 'string') {
+      try {
+        return JSON.parse(field);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const handleProductSelect = (product: Product) => {
+    const variants = parseJsonField(product.variants);
+    const addons = parseJsonField(product.addons);
+
+    if (variants.length > 0 || addons.length > 0) {
+      setCustomizingProduct(product);
+      setSelectedVariant(variants[0] || null);
+      setSelectedModifiers([]);
+      setCustomizationQty(1);
+      setItemNotesInput('');
+    } else {
+      addToCart(product);
+    }
+  };
+
+  const fetchWaiters = async () => {
+    try {
+      if (isOnline) {
+        const response = await api.get('/auth/users');
+        const waiterUsers = (response.data || []).filter((u: any) => u.role === 'WAITER' || u.role === 'STAFF' || u.role === 'ADMIN' || u.role === 'MANAGER');
+        setWaiters(waiterUsers);
+      }
+    } catch (error) {
+      console.error('Failed to fetch waiters:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+    fetchProducts();
+    fetchTables();
+    fetchSections();
+    fetchSettings();
+    checkActiveShift();
+    fetchPendingQrRequests();
+    fetchWaiters();
+  }, [isOnline]);
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen();
