@@ -481,11 +481,11 @@ const POSInterface: React.FC = () => {
       // Optimistic UI state
       let finalOrderData = { ...orderData, isSyncing: true, isSynced: false };
 
-      // 1. LOCAL PERSISTENCE & STOCK GUARD (Fast, 0ms latency)
+      // 1. LOCAL PERSISTENCE & STOCK GUARD (Fast, <10ms latency)
       try {
         await offlineDB.put('orders', finalOrderData);
         
-        // Update stock in-memory and in-database simultaneously
+        // Update stock in-memory and in-database concurrently
         const updatedAllProducts = [...allProducts];
         const db = await offlineDB.initDB();
         const tx = db.transaction('products', 'readwrite');
@@ -499,7 +499,7 @@ const POSInterface: React.FC = () => {
               ...updatedAllProducts[idx],
               stockQuantity: newStock
             };
-            await store.put(updatedAllProducts[idx]);
+            store.put(updatedAllProducts[idx]); // Batch puts without awaiting each sequentially
           }
         }
         await tx.done;
@@ -509,55 +509,48 @@ const POSInterface: React.FC = () => {
         console.error('Local persistence failed:', err);
       }
       
-      // 2. SERVER SYNC & UI TRANSITION
-      if (isOnline) {
-        try {
-          const syncPromise = activeOrderId
-            ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
-            : api.post('/orders', orderData, {
-                headers: { 'x-terminal-id': 'T1' },
-                skipAuthRedirect: true
-              } as any);
+      // 2. INSTANT UI TRANSITION (0ms latency for cashier)
+      setRecentOrder(finalOrderData);
+      clearCart();
+      setIsPaymentModalOpen(false);
+      setIsPreviewOpen(true);
 
-          const response = await syncPromise;
-          const syncedData = { ...orderData, ...response.data, isSyncing: false, isSynced: true };
-          await offlineDB.put('orders', syncedData).catch(() => {});
-          
-          setRecentOrder(syncedData);
-          clearCart();
-          setIsPaymentModalOpen(false);
-          setIsPreviewOpen(true);
-          
-          // Fire WhatsApp ONLY after successful sync completion
-          if (syncedData.customer?.phone) {
-             api.post('/orders/share-whatsapp', { 
-                 orderId: syncedData.id || syncedData.invoiceNo, 
-                 phone: syncedData.customer.phone 
-             }, { skipAuthRedirect: true } as any).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
-          }
-          fetchTables(); // Refresh tables layout state
-        } catch (error) {
-          console.error('Checkout Sync Failed, added to queue:', error);
-          await addToSyncQueue('CREATE_ORDER', orderData);
-          
-          // Fallback to optimistic state if sync fails
-          setRecentOrder(finalOrderData);
-          clearCart();
-          setIsPaymentModalOpen(false);
-          setIsPreviewOpen(true);
-        }
+      // 3. NON-BLOCKING BACKGROUND SERVER SYNC
+      if (isOnline) {
+        const syncPromise = activeOrderId
+          ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
+          : api.post('/orders', orderData, {
+              headers: { 'x-terminal-id': 'T1' },
+              skipAuthRedirect: true
+            } as any);
+
+        syncPromise
+          .then(async (response) => {
+            const syncedData = { ...orderData, ...response.data, isSyncing: false, isSynced: true };
+            await offlineDB.put('orders', syncedData).catch(() => {});
+            setRecentOrder((prev: any) => (prev?.id === syncedData.id ? syncedData : prev));
+            
+            // Silent WhatsApp dispatch after sync completion
+            if (syncedData.customer?.phone) {
+              api.post('/orders/share-whatsapp', { 
+                  orderId: syncedData.id || syncedData.invoiceNo, 
+                  phone: syncedData.customer.phone 
+              }, { skipAuthRedirect: true } as any).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
+            }
+            fetchTables(); // Refresh tables layout state
+          })
+          .catch(async (error) => {
+            console.error('Checkout Background Sync Failed, added to sync queue:', error);
+            await addToSyncQueue('CREATE_ORDER', orderData);
+          });
       } else {
         // Offline queueing
         await addToSyncQueue('CREATE_ORDER', orderData);
-        setRecentOrder(finalOrderData);
-        clearCart();
-        setIsPaymentModalOpen(false);
-        setIsPreviewOpen(true);
       }
       
     } catch (error: any) {
       console.error('Critical Layout Error:', error);
-      alert('A critical error occurred while attempting to process the layout.');
+      alert('A critical error occurred while attempting to process the order.');
     } finally {
       setIsSyncing(false);
     }

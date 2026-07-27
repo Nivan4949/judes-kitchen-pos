@@ -286,46 +286,55 @@ router.post('/', auth(['ADMIN', 'MANAGER', 'CASHIER', 'WAITER']), async (req, re
         include: { orderItems: { include: { product: true } }, payments: true }
       });
 
-      // 5. Stock Updates & Recipe deductions
+      // 5. Stock Updates & Recipe deductions (Optimized parallel batching)
+      const inventoryLogs = [];
+      const stockUpdatePromises = [];
+      const recipeDeductMap = {};
+
       for (const item of orderItems) {
         const pid = item.productId || item.id;
         const qty = Number(item.quantity) || 0;
         const p = productMap.get(pid);
 
-        // Decrement Product Stock
-        await tx.$executeRaw`
-          UPDATE "Product" 
-          SET "stockQuantity" = "stockQuantity" - ${qty} 
-          WHERE id = ${pid}
-        `;
+        stockUpdatePromises.push(
+          tx.$executeRaw`
+            UPDATE "Product" 
+            SET "stockQuantity" = "stockQuantity" - ${qty} 
+            WHERE id = ${pid}
+          `
+        );
 
-        // Create Inventory Log
-        await tx.inventoryLog.create({
-          data: {
-            productId: pid,
-            type: 'OUT',
-            quantity: qty,
-            reason: `Order ${invoiceNo}`
-          }
+        inventoryLogs.push({
+          productId: pid,
+          type: 'OUT',
+          quantity: qty,
+          reason: `Order ${invoiceNo}`
         });
 
-        // Recipe Deductions (Raw materials)
         if (p && p.recipe && Array.isArray(p.recipe)) {
           for (const ingredient of p.recipe) {
             const rawId = ingredient.rawMaterialId;
             const ingredientQty = Number(ingredient.quantity) || 0;
             const totalDeduct = ingredientQty * qty;
             if (rawId && totalDeduct > 0) {
-              await tx.rawMaterial.update({
-                where: { id: rawId },
-                data: {
-                  stockQuantity: { decrement: totalDeduct }
-                }
-              });
+              recipeDeductMap[rawId] = (recipeDeductMap[rawId] || 0) + totalDeduct;
             }
           }
         }
       }
+
+      const recipeUpdatePromises = Object.entries(recipeDeductMap).map(([rawId, totalDeduct]) =>
+        tx.rawMaterial.update({
+          where: { id: rawId },
+          data: { stockQuantity: { decrement: totalDeduct } }
+        })
+      );
+
+      await Promise.all([
+        ...stockUpdatePromises,
+        inventoryLogs.length > 0 ? tx.inventoryLog.createMany({ data: inventoryLogs }) : Promise.resolve(),
+        ...recipeUpdatePromises
+      ]);
 
       // 6. Manage Dining Table Status
       if (tableId && orderType === 'Dine-in') {
@@ -475,23 +484,25 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
         });
       }
 
-      // 4. Perform Inventory Updates Sequentially for stability
-      // Reverse old items (Increment stock back)
+      // 4. Perform Inventory Updates with parallel batching
+      const reverseStockPromises = [];
+      const reverseLogs = [];
+      const reverseRecipeMap = {};
+
       for (const item of oldOrder.orderItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockQuantity: { increment: item.quantity } }
-        });
-        await tx.inventoryLog.create({
-          data: {
-            productId: item.productId,
-            type: 'IN',
-            quantity: item.quantity,
-            reason: `Edit Reverse: ${oldOrder.invoiceNo}`
-          }
+        reverseStockPromises.push(
+          tx.product.update({
+            where: { id: item.productId },
+            data: { stockQuantity: { increment: item.quantity } }
+          })
+        );
+        reverseLogs.push({
+          productId: item.productId,
+          type: 'IN',
+          quantity: item.quantity,
+          reason: `Edit Reverse: ${oldOrder.invoiceNo}`
         });
 
-        // Reverse raw material recipe stock
         const p = productMap.get(item.productId);
         if (p && p.recipe && Array.isArray(p.recipe)) {
           for (const ingredient of p.recipe) {
@@ -499,14 +510,24 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
             const ingredientQty = Number(ingredient.quantity) || 0;
             const totalReverse = ingredientQty * item.quantity;
             if (rawId && totalReverse > 0) {
-              await tx.rawMaterial.update({
-                where: { id: rawId },
-                data: { stockQuantity: { increment: totalReverse } }
-              });
+              reverseRecipeMap[rawId] = (reverseRecipeMap[rawId] || 0) + totalReverse;
             }
           }
         }
       }
+
+      const reverseRecipePromises = Object.entries(reverseRecipeMap).map(([rawId, totalReverse]) =>
+        tx.rawMaterial.update({
+          where: { id: rawId },
+          data: { stockQuantity: { increment: totalReverse } }
+        })
+      );
+
+      await Promise.all([
+        ...reverseStockPromises,
+        reverseLogs.length > 0 ? tx.inventoryLog.createMany({ data: reverseLogs }) : Promise.resolve(),
+        ...reverseRecipePromises
+      ]);
 
       // 5. APPLY: Delete old mapping and prepare new
       await tx.orderItem.deleteMany({ where: { orderId: id } });
@@ -516,41 +537,54 @@ router.put('/:id', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
       const newLoyaltyPointsEarned = Math.floor(grandTotal / earnRate);
       const isPaid = (status === 'COMPLETED' || amountPaid >= grandTotal || balance <= 0);
 
-      // Re-apply new items
+      // Re-apply new items with parallel batching
+      const applyStockPromises = [];
+      const applyLogs = [];
+      const applyRecipeMap = {};
+
       for (const item of newItems) {
         const pid = item.productId || item.id;
-        if (!pid) continue; // Skip empty lines
+        if (!pid) continue;
         const p = productMap.get(pid);
         if (!p) throw new Error(`Product ${pid} not found`);
 
-        await tx.product.update({
-          where: { id: pid },
-          data: { stockQuantity: { decrement: item.quantity } }
-        });
-        await tx.inventoryLog.create({
-          data: {
-            productId: pid,
-            type: 'OUT',
-            quantity: item.quantity,
-            reason: `Edit Apply: ${oldOrder.invoiceNo}`
-          }
+        applyStockPromises.push(
+          tx.product.update({
+            where: { id: pid },
+            data: { stockQuantity: { decrement: item.quantity } }
+          })
+        );
+        applyLogs.push({
+          productId: pid,
+          type: 'OUT',
+          quantity: item.quantity,
+          reason: `Edit Apply: ${oldOrder.invoiceNo}`
         });
 
-        // Deduct raw material recipe stock
         if (p.recipe && Array.isArray(p.recipe)) {
           for (const ingredient of p.recipe) {
             const rawId = ingredient.rawMaterialId;
             const ingredientQty = Number(ingredient.quantity) || 0;
             const totalDeduct = ingredientQty * item.quantity;
             if (rawId && totalDeduct > 0) {
-              await tx.rawMaterial.update({
-                where: { id: rawId },
-                data: { stockQuantity: { decrement: totalDeduct } }
-              });
+              applyRecipeMap[rawId] = (applyRecipeMap[rawId] || 0) + totalDeduct;
             }
           }
         }
       }
+
+      const applyRecipePromises = Object.entries(applyRecipeMap).map(([rawId, totalDeduct]) =>
+        tx.rawMaterial.update({
+          where: { id: rawId },
+          data: { stockQuantity: { decrement: totalDeduct } }
+        })
+      );
+
+      await Promise.all([
+        ...applyStockPromises,
+        applyLogs.length > 0 ? tx.inventoryLog.createMany({ data: applyLogs }) : Promise.resolve(),
+        ...applyRecipePromises
+      ]);
 
       // 6. Final Record Update
       const finalOrder = await tx.order.update({
