@@ -173,29 +173,41 @@ const RecipeManagement = () => {
   useEffect(() => {
     if (selectedProductId) {
       const p = products.find(prod => prod.id === selectedProductId);
-      if (p && p.recipe && Array.isArray(p.recipe)) {
+      if (p && p.recipeMatrix && Array.isArray(p.recipeMatrix) && p.recipeMatrix.length > 0) {
+        setRecipeItems(p.recipeMatrix.map((rm: any) => ({
+          rawMaterialId: rm.rawMaterialId,
+          quantity: rm.quantityRequired,
+          unit: rm.unit
+        })));
+      } else if (p && p.recipe && Array.isArray(p.recipe) && p.recipe.length > 0) {
         setRecipeItems(p.recipe);
       } else {
         setRecipeItems([{ rawMaterialId: '', quantity: 0 }]);
       }
     }
-  }, [selectedProductId]);
+  }, [selectedProductId, products]);
 
   const handleSaveRecipe = async () => {
     if (!selectedProductId) return;
-    const validRecipe = recipeItems.filter(i => i.rawMaterialId && i.quantity > 0);
+    const validRecipe = recipeItems.filter(i => i.rawMaterialId && parseFloat(i.quantity) > 0);
     
     try {
-      const p = products.find(prod => prod.id === selectedProductId);
-      await api.put(`/products/${selectedProductId}`, {
-        ...p,
-        recipe: validRecipe
+      await api.post('/inventory/recipe-matrix', {
+        finishedProductId: selectedProductId,
+        items: validRecipe.map(i => {
+          const rm = rawMaterials.find(r => r.id === i.rawMaterialId);
+          return {
+            rawMaterialId: i.rawMaterialId,
+            quantityRequired: parseFloat(i.quantity),
+            unit: i.unit || rm?.unit || 'kg'
+          };
+        })
       });
-      fetchProducts();
-      alert('Recipe mapped successfully!');
-    } catch (err) {
+      await fetchProducts();
+      alert('Recipe Matrix mapped successfully!');
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to save recipe mapping');
+      alert(err.response?.data?.error || 'Failed to save recipe mapping');
     }
   };
 

@@ -89,6 +89,8 @@ model Product {
   purchaseReturnItems PurchaseReturnItem[]
   inventoryLogs       InventoryLog[]
   purchaseOrderItems  PurchaseOrderItem[] // New PO relation
+  recipeMatrix        RecipeMatrix[]
+  productionBatches   ProductionBatch[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 }
@@ -495,6 +497,8 @@ model RawMaterial {
   updatedAt         DateTime @updatedAt
   purchases         RawMaterialPurchaseItem[]
   wastage           WastageEntry[]
+  recipeMatrix      RecipeMatrix[]
+  productionBatchItems ProductionBatchItem[]
 }
 
 model RawMaterialPurchase {
@@ -529,3 +533,39 @@ model WastageEntry {
   createdAt       DateTime    @default(now())
   rawMaterial     RawMaterial @relation(fields: [rawMaterialId], references: [id])
 }
+
+model RecipeMatrix {
+  id                String      @id @default(uuid())
+  finishedProductId String
+  finishedProduct   Product     @relation(fields: [finishedProductId], references: [id], onDelete: Cascade)
+  rawMaterialId     String
+  rawMaterial       RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  quantityRequired  Float
+  unit              String
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@unique([finishedProductId, rawMaterialId])
+}
+
+model ProductionBatch {
+  id                String                @id @default(uuid())
+  batchNo           String                @unique
+  finishedProductId String
+  finishedProduct   Product               @relation(fields: [finishedProductId], references: [id], onDelete: Cascade)
+  quantityProduced  Float
+  producedAt        DateTime              @default(now())
+  createdBy         String?
+  items             ProductionBatchItem[]
+  createdAt         DateTime              @default(now())
+}
+
+model ProductionBatchItem {
+  id               String          @id @default(uuid())
+  batchId          String
+  batch            ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rawMaterialId    String
+  rawMaterial      RawMaterial     @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  quantityConsumed Float
+}
+

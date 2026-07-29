@@ -131,6 +131,62 @@ router.get('/summary', async (req, res) => {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
+    // --- MANUFACTURING & INVENTORY DASHBOARD KPIS ---
+    // 1. Raw Material Stock (total stock quantity)
+    const rawMaterialsList = await prisma.rawMaterial.findMany({ select: { stockQuantity: true } }).catch(() => []);
+    const rawMaterialStock = rawMaterialsList.reduce((sum, rm) => sum + (rm.stockQuantity || 0), 0);
+
+    // 2. Finished Product Stock (total stock quantity)
+    const productsList = await prisma.product.findMany({ select: { stockQuantity: true, purchasePrice: true, sellingPrice: true } }).catch(() => []);
+    const finishedProductStock = productsList.reduce((sum, p) => sum + (p.stockQuantity || 0), 0);
+
+    // 3. Total Inventory Value
+    const inventoryValue = productsList.reduce((sum, p) => sum + ((p.stockQuantity || 0) * (p.purchasePrice || p.sellingPrice || 0)), 0);
+
+    // 4. Today's Production
+    const todayBatches = await prisma.productionBatch.findMany({
+      where: { createdAt: dateRange },
+      select: { quantityProduced: true }
+    }).catch(() => []);
+    const todaysProduction = todayBatches.reduce((sum, b) => sum + (b.quantityProduced || 0), 0);
+
+    // 5. Today's Waste Expense
+    const todayWasteExpenses = await prisma.expense.findMany({
+      where: {
+        createdAt: dateRange,
+        type: 'Wasted Stock'
+      },
+      select: { amount: true }
+    }).catch(() => []);
+    const todaysWaste = todayWasteExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    // 6. Today's Operating Expenses
+    const todayOpExpenses = await prisma.expense.findMany({
+      where: {
+        createdAt: dateRange,
+        NOT: { type: 'Wasted Stock' }
+      },
+      select: { amount: true }
+    }).catch(() => []);
+    const todaysOperatingExpenses = todayOpExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    // 7. Today's Procurement
+    const todayProcurements = await prisma.rawMaterialPurchase.findMany({
+      where: { createdAt: dateRange },
+      select: { totalAmount: true }
+    }).catch(() => []);
+    const todaysProcurement = todayProcurements.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+    // 8. Today's Profit & Loss
+    const todayOrderItems = await prisma.orderItem.findMany({
+      where: { order: { createdAt: dateRange } },
+      include: { product: true }
+    }).catch(() => []);
+    const todayCogs = todayOrderItems.reduce((sum, item) => sum + (Number(item.product?.purchasePrice || item.purchasePrice || 0) * item.quantity), 0);
+    const todaysGrossProfit = todaySales - todayCogs;
+    const todaysProfit = todaysGrossProfit - todaysOperatingExpenses - todaysWaste;
+    const todaysLoss = todaysOperatingExpenses + todaysWaste;
+
     res.json({
       todaySales,
       runningOrdersCount,
@@ -144,6 +200,14 @@ router.get('/summary', async (req, res) => {
       activeTerminals,
       recentOrders,
       distribution,
+      rawMaterialStock,
+      finishedProductStock,
+      inventoryValue,
+      todaysProduction,
+      todaysWaste,
+      todaysProcurement,
+      todaysProfit,
+      todaysLoss,
       lastSync: recentOrders[0]?.createdAt || new Date()
     });
   } catch (error) {
@@ -329,49 +393,64 @@ router.get('/profit-loss', async (req, res) => {
     const { filter, startDate, endDate, timezoneOffset } = req.query;
     const dateRange = getDateRange(filter, startDate, endDate, parseInt(timezoneOffset || 0));
     
-    let totalSales, orderItems, expenses, totalExpense = 0;
+    let totalSales, orderItems, opExpensesSum = 0, wastedStockSum = 0;
     
     try {
       totalSales = await prisma.order.aggregate({
-        where: { createdAt: dateRange },
-        _sum: { subtotal: true }
+        where: { createdAt: dateRange, status: { not: 'CANCELLED' } },
+        _sum: { grandTotal: true }
       });
       orderItems = await prisma.orderItem.findMany({
-        where: { order: { createdAt: dateRange } },
+        where: { order: { createdAt: dateRange, status: { not: 'CANCELLED' } } },
         include: { product: true }
       });
-      expenses = await prisma.expense.aggregate({
-        where: { createdAt: dateRange },
+
+      // Separate Wasted Stock expenses from general operating expenses
+      const opExpensesAgg = await prisma.expense.aggregate({
+        where: { createdAt: dateRange, NOT: { type: 'Wasted Stock' } },
         _sum: { amount: true }
       });
-      totalExpense = expenses._sum.amount || 0;
+      opExpensesSum = opExpensesAgg._sum.amount || 0;
+
+      const wastedStockAgg = await prisma.expense.aggregate({
+        where: { createdAt: dateRange, type: 'Wasted Stock' },
+        _sum: { amount: true }
+      });
+      wastedStockSum = wastedStockAgg._sum.amount || 0;
+
     } catch (err) {
       console.warn('Profit/Loss fallback:', err.message);
-      // Raw fallback for aggregates
-      const rawSales = await prisma.$queryRaw`SELECT SUM(subtotal) as total FROM "Order" WHERE "createdAt" >= ${dateRange.gte} AND "createdAt" <= ${dateRange.lte}`;
-      totalSales = { _sum: { subtotal: Number(rawSales[0]?.total) || 0 } };
+      const rawSales = await prisma.$queryRaw`SELECT SUM("grandTotal") as total FROM "Order" WHERE "status" != 'CANCELLED' AND "createdAt" >= ${dateRange.gte} AND "createdAt" <= ${dateRange.lte}`;
+      totalSales = { _sum: { grandTotal: Number(rawSales[0]?.total) || 0 } };
       
       orderItems = await prisma.$queryRaw`
         SELECT oi.quantity, p."purchasePrice"
         FROM "OrderItem" oi
         JOIN "Product" p ON oi."productId" = p.id
         JOIN "Order" o ON oi."orderId" = o.id
-        WHERE o."createdAt" >= ${dateRange.gte} AND o."createdAt" <= ${dateRange.lte}
+        WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${dateRange.gte} AND o."createdAt" <= ${dateRange.lte}
       `;
       
-      const rawExp = await prisma.$queryRaw`SELECT SUM(amount) as total FROM "Expense" WHERE "createdAt" >= ${dateRange.gte} AND "createdAt" <= ${dateRange.lte}`;
-      totalExpense = Number(rawExp[0]?.total) || 0;
+      const rawOpExp = await prisma.$queryRaw`SELECT SUM(amount) as total FROM "Expense" WHERE type != 'Wasted Stock' AND "createdAt" >= ${dateRange.gte} AND "createdAt" <= ${dateRange.lte}`;
+      opExpensesSum = Number(rawOpExp[0]?.total) || 0;
+
+      const rawWasteExp = await prisma.$queryRaw`SELECT SUM(amount) as total FROM "Expense" WHERE type = 'Wasted Stock' AND "createdAt" >= ${dateRange.gte} AND "createdAt" <= ${dateRange.lte}`;
+      wastedStockSum = Number(rawWasteExp[0]?.total) || 0;
     }
 
+    const salesAmount = Number(totalSales._sum?.grandTotal || 0);
     const cogs = orderItems.reduce((sum, item) => sum + (Number(item.product?.purchasePrice || item.purchasePrice || 0) * item.quantity), 0);
-    const grossProfit = (Number(totalSales._sum.subtotal) || 0) - cogs;
-    const netProfit = grossProfit - totalExpense;
+    const grossProfit = salesAmount - cogs;
+    const totalExpenses = opExpensesSum + wastedStockSum;
+    const netProfit = salesAmount - cogs - opExpensesSum - wastedStockSum;
     
     res.json({
-      salesAmount: Number(totalSales._sum.subtotal) || 0,
+      salesAmount,
       cogs,
       grossProfit,
-      expenses: totalExpense,
+      expenses: opExpensesSum,
+      wastedStock: wastedStockSum,
+      totalExpenses,
       netProfit
     });
   } catch (error) { res.status(500).json({ error: error.message }); }

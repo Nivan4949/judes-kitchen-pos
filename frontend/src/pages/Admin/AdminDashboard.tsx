@@ -77,8 +77,12 @@ const AdminDashboard = () => {
 
         socket.on('ORDER_SYNCED', () => fetchStats());
 
+        const handleInventoryUpdate = () => fetchStats();
+        window.addEventListener('inventory-updated', handleInventoryUpdate);
+
         return () => {
             socket.disconnect();
+            window.removeEventListener('inventory-updated', handleInventoryUpdate);
         };
     }, []);
 
@@ -98,6 +102,13 @@ const AdminDashboard = () => {
             path: '/',
             icon: <Wallet className="text-emerald-400" size={24} />,
             bg: 'from-emerald-500/10 to-emerald-500/5 hover:from-emerald-500/20'
+        },
+        {
+            name: 'Stock & Production',
+            desc: 'Procure, Produce & Shop Close',
+            path: '/stock-procurement',
+            icon: <ChefHat className="text-amber-400" size={24} />,
+            bg: 'from-amber-500/10 to-amber-500/5 hover:from-amber-500/20'
         },
         {
             name: 'Table Floor Map',
@@ -126,13 +137,6 @@ const AdminDashboard = () => {
             path: '/recipes',
             icon: <ClipboardList className="text-yellow-400" size={24} />,
             bg: 'from-yellow-500/10 to-yellow-500/5 hover:from-yellow-500/20'
-        },
-        {
-            name: 'Manage System Settings',
-            desc: 'Floor plan / taxes',
-            path: '/settings',
-            icon: <Smartphone className="text-slate-400" size={24} />,
-            bg: 'from-slate-500/10 to-slate-500/5 hover:from-slate-500/20'
         }
     ];
 
@@ -167,50 +171,55 @@ const AdminDashboard = () => {
                     </div>
                 </div>
 
-                {/* Operations Summary Widgets */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-8 md:mb-10">
+                {/* Operations & Inventory Summary Widgets */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6">
                     <div className="bg-gradient-to-br from-emerald-500/10 to-transparent p-4 md:p-6 rounded-[2rem] border border-emerald-500/20 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 text-emerald-500/10">
-                            <TrendingUp size={48} />
-                        </div>
-                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">
-                            Today's Sales
-                        </p>
+                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">Today's Sales</p>
                         <h2 className="text-2xl md:text-4xl font-black text-emerald-400">₹{stats.todaySales?.toFixed(2)}</h2>
                         <p className="text-[10px] text-slate-500 mt-2 font-medium">All completed orders today</p>
                     </div>
 
                     <div className="bg-gradient-to-br from-blue-500/10 to-transparent p-4 md:p-6 rounded-[2rem] border border-blue-500/20 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 text-blue-500/10">
-                            <ShoppingBag size={48} />
-                        </div>
-                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">
-                            Running Orders
-                        </p>
-                        <h2 className="text-2xl md:text-4xl font-black text-blue-400">{stats.runningOrdersCount}</h2>
-                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Active unpaid sessions</p>
+                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">Today's Net Profit</p>
+                        <h2 className={`text-2xl md:text-4xl font-black ${(stats as any).todaysProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            ₹{((stats as any).todaysProfit || 0).toFixed(2)}
+                        </h2>
+                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Sales - COGS - Expenses - Waste</p>
                     </div>
 
                     <div className="bg-gradient-to-br from-purple-500/10 to-transparent p-4 md:p-6 rounded-[2rem] border border-purple-500/20 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 text-purple-500/10">
-                            <LayoutGrid size={48} />
-                        </div>
-                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">
-                            Occupied Tables
-                        </p>
-                        <h2 className="text-2xl md:text-4xl font-black text-purple-400">{stats.occupiedTablesCount}</h2>
-                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Active dining tables</p>
+                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">Today's Production</p>
+                        <h2 className="text-2xl md:text-4xl font-black text-purple-400">{(stats as any).todaysProduction || 0} pcs</h2>
+                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Finished batch production</p>
                     </div>
 
-                    <div className="bg-gradient-to-br from-orange-500/10 to-transparent p-4 md:p-6 rounded-[2rem] border border-orange-500/20 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 text-orange-500/10">
-                            <ChefHat size={48} />
-                        </div>
-                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">
-                            Pending KOTs
-                        </p>
-                        <h2 className="text-2xl md:text-4xl font-black text-orange-400">{stats.pendingKotsCount}</h2>
-                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Cooking tickets in kitchen</p>
+                    <div className="bg-gradient-to-br from-red-500/10 to-transparent p-4 md:p-6 rounded-[2rem] border border-red-500/20 shadow-2xl relative overflow-hidden group">
+                        <p className="text-slate-400 font-bold text-[8px] md:text-xs uppercase tracking-widest mb-1">Today's Wasted Stock</p>
+                        <h2 className="text-2xl md:text-4xl font-black text-red-400">₹{((stats as any).todaysWaste || 0).toFixed(2)}</h2>
+                        <p className="text-[10px] text-slate-500 mt-2 font-medium">Shop Close & wastage expense</p>
+                    </div>
+                </div>
+
+                {/* Additional Inventory KPI Row */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-8 md:mb-10">
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-white/5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Raw Material Stock</span>
+                        <span className="text-xl font-black text-white">{((stats as any).rawMaterialStock || 0).toFixed(1)} Units</span>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-white/5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Finished Product Stock</span>
+                        <span className="text-xl font-black text-white">{((stats as any).finishedProductStock || 0)} pcs</span>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-white/5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total Inventory Value</span>
+                        <span className="text-xl font-black text-emerald-400">₹{((stats as any).inventoryValue || 0).toFixed(2)}</span>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-white/5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Today's Procurement</span>
+                        <span className="text-xl font-black text-amber-400">₹{((stats as any).todaysProcurement || 0).toFixed(2)}</span>
                     </div>
                 </div>
 

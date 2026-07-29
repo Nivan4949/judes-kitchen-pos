@@ -1111,34 +1111,84 @@ const Reports = () => {
       }
       
       case 'profit-loss': {
-        if (Array.isArray(reportData)) return <div className="p-20 text-center animate-pulse text-brand-400">Calculating...</div>;
+        if (!reportData || reportData.salesAmount === undefined) {
+          return <div className="p-20 text-center animate-pulse text-brand-400">Calculating Profit & Loss...</div>;
+        }
+
+        const isGrossLoss = (reportData.grossProfit || 0) < 0;
+        const isNetLoss = (reportData.netProfit || 0) < 0;
+
         return (
-          <div className="max-w-xl mx-auto space-y-4">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
-              <span className="font-bold text-slate-600">Total Sales</span>
-              <span className="font-black text-xl text-slate-800">₹{reportData.salesAmount?.toFixed(2)}</span>
+          <div className="space-y-6 max-w-4xl mx-auto">
+            {/* Top KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sales Revenue</p>
+                <h3 className="text-3xl font-black text-slate-900">₹{(reportData.salesAmount || 0).toFixed(2)}</h3>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Gross Profit</p>
+                <h3 className={`text-3xl font-black ${isGrossLoss ? 'text-red-500' : 'text-emerald-600'}`}>
+                  ₹{Math.abs(reportData.grossProfit || 0).toFixed(2)}
+                </h3>
+              </div>
+
+              <div className={`p-6 rounded-3xl border shadow-sm ${isNetLoss ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isNetLoss ? 'text-red-500' : 'text-emerald-600'}`}>
+                  {isNetLoss ? 'Net Loss' : 'Net Profit'}
+                </p>
+                <h3 className={`text-3xl font-black ${isNetLoss ? 'text-red-600' : 'text-emerald-700'}`}>
+                  ₹{Math.abs(reportData.netProfit || 0).toFixed(2)}
+                </h3>
+              </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center text-red-500">
-              <span className="font-bold">Cost of Goods Sold</span>
-              <span className="font-black text-xl">- ₹{reportData.cogs?.toFixed(2)}</span>
-            </div>
-            <div className="h-px bg-slate-200"></div>
-            <div className={`${reportData.grossProfit < 0 ? 'bg-red-50 border-red-100' : 'bg-brand-50 border-brand-100'} p-6 rounded-2xl border flex justify-between items-center transition-colors`}>
-              <span className={`font-bold ${reportData.grossProfit < 0 ? 'text-red-600' : 'text-brand-600'}`}>{reportData.grossProfit < 0 ? 'Gross Loss' : 'Gross Profit'}</span>
-              <span className={`font-black text-2xl ${reportData.grossProfit < 0 ? 'text-red-700' : 'text-brand-700'}`}>₹{Math.abs(reportData.grossProfit)?.toFixed(2)}</span>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center text-red-500">
-              <span className="font-bold">Total Expenses</span>
-              <span className="font-black text-xl">- ₹{reportData.expenses?.toFixed(2)}</span>
-            </div>
-            <div className="h-0.5 bg-slate-300"></div>
-            <div className={`${(Number(reportData.netProfit) || 0) < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'} p-6 rounded-2xl border flex justify-between items-center transition-all duration-500 shadow-sm`}>
-              <span className={`font-black text-lg ${(Number(reportData.netProfit) || 0) < 0 ? 'text-red-700' : 'text-emerald-700'} uppercase tracking-widest`}>
-                {(Number(reportData.netProfit) || 0) < 0 ? 'Net Loss' : 'Net Profit'}
-              </span>
-              <span className={`font-black text-4xl ${(Number(reportData.netProfit) || 0) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                ₹{Math.abs(Number(reportData.netProfit) || 0).toFixed(2)}
-              </span>
+
+            {/* Income & Expense Breakdown Table */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h3 className="font-black text-sm text-slate-900 uppercase tracking-wider">Statement of Profit & Loss</h3>
+                <span className="text-xs font-bold text-slate-400 font-mono">Formula: Sales - COGS - Op.Expenses - Waste</span>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="flex justify-between items-center py-3 border-b border-slate-100 text-sm font-bold">
+                  <span className="text-slate-700">Gross Sales Revenue</span>
+                  <span className="text-slate-900 text-lg">₹{(reportData.salesAmount || 0).toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center py-3 border-b border-slate-100 text-sm font-bold text-slate-600">
+                  <span>Less: Cost of Goods Sold (COGS)</span>
+                  <span className="text-amber-600 font-mono">- ₹{(reportData.cogs || 0).toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center py-3 bg-slate-50 px-4 rounded-xl font-black text-sm text-slate-800">
+                  <span>Gross Profit</span>
+                  <span className={isGrossLoss ? 'text-red-600' : 'text-emerald-600'}>
+                    ₹{(reportData.grossProfit || 0).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center py-3 border-b border-slate-100 text-sm font-bold text-slate-600">
+                  <span>Less: Operating Expenses</span>
+                  <span className="text-orange-600 font-mono">- ₹{(reportData.expenses || 0).toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center py-3 border-b border-slate-100 text-sm font-bold text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span>Less: Wasted Stock Expense (Shop Close Clearance)</span>
+                    <span className="bg-red-100 text-red-600 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">Auto Clearance</span>
+                  </div>
+                  <span className="text-red-600 font-mono">- ₹{(reportData.wastedStock || 0).toFixed(2)}</span>
+                </div>
+
+                <div className={`flex justify-between items-center p-5 rounded-2xl font-black text-xl mt-4 ${
+                  isNetLoss ? 'bg-red-50 text-red-700 border-2 border-red-200' : 'bg-emerald-500 text-white shadow-xl shadow-emerald-500/20'
+                }`}>
+                  <span>NET {isNetLoss ? 'LOSS' : 'PROFIT'}</span>
+                  <span>₹{Math.abs(reportData.netProfit || 0).toFixed(2)}</span>
+                </div>
+              </div>
             </div>
           </div>
         );
