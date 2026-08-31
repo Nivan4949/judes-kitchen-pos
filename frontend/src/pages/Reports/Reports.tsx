@@ -9,7 +9,7 @@ import CreditSettlementModal from '../../components/CreditSettlementModal';
 import { Coins } from 'lucide-react';
 import { offlineDB } from '../../utils/offlineDB';
 import useNetworkStatus from '../../hooks/useNetworkStatus';
-import { processSyncQueue } from '../../utils/syncQueue';
+import CustomDateRangeModal from '../../components/CustomDateRangeModal';
 import { RefreshCw } from 'lucide-react';
 
 const reportCategories = [
@@ -75,6 +75,7 @@ const Reports = () => {
   const [dateFilter, setDateFilter] = useState('Today');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [isCustomDateModalOpen, setIsCustomDateModalOpen] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [isExporting, setIsExporting] = useState<'CSV' | 'PDF' | null>(null);
@@ -2036,11 +2037,17 @@ const Reports = () => {
             {/* Date Filters (Hidden for some static reports like parties, stock-summary) */}
             {['parties', 'stock-summary', 'balance-sheet'].indexOf(activeReport) === -1 && (
               <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-                <Calendar className="w-5 h-5 ml-2 text-slate-400" />
+                <Calendar className="w-5 h-5 ml-2 text-emerald-600" />
                 <select 
-                  className="bg-transparent border-none text-sm font-bold text-slate-700 focus:outline-none focus:ring-0 mr-2 py-1.5"
+                  className="bg-transparent border-none text-sm font-bold text-slate-700 focus:outline-none focus:ring-0 mr-1 py-1.5 cursor-pointer"
                   value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDateFilter(val);
+                    if (val === 'Custom') {
+                      setIsCustomDateModalOpen(true);
+                    }
+                  }}
                 >
                   <option value="Today">Today</option>
                   <option value="Week">This Week</option>
@@ -2048,6 +2055,19 @@ const Reports = () => {
                   <option value="Custom">Custom Range</option>
                   <option value="All">All Time</option>
                 </select>
+                
+                <button
+                  onClick={() => setIsCustomDateModalOpen(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all mr-1 flex items-center gap-1.5 ${
+                    dateFilter === 'Custom'
+                      ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {dateFilter === 'Custom' && customStart && customEnd
+                    ? `${customStart} - ${customEnd}`
+                    : 'Select Custom Range'}
+                </button>
               </div>
             )}
 
@@ -2077,12 +2097,20 @@ const Reports = () => {
           </div>
         </div>
 
-        {/* Custom Date Inputs */}
+        {/* Custom Date Range Summary Banner */}
         {dateFilter === 'Custom' && ['parties', 'stock-summary', 'balance-sheet'].indexOf(activeReport) === -1 && (
-          <div className="flex gap-4 mb-6">
-            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="p-2 border rounded-xl text-sm font-medium" />
-            <span className="self-center font-bold text-slate-400">To</span>
-            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="p-2 border rounded-xl text-sm font-medium" />
+          <div className="flex items-center gap-3 mb-6 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm w-fit animate-in fade-in duration-200">
+            <span className="text-xs font-bold text-slate-500">Selected Date Range:</span>
+            <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200">
+              {customStart && customEnd ? `${customStart} to ${customEnd}` : 'Click to set custom date range'}
+            </span>
+            <button
+              onClick={() => setIsCustomDateModalOpen(true)}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <Calendar size={14} />
+              Open Calendar Modal
+            </button>
           </div>
         )}
 
@@ -2232,6 +2260,19 @@ const Reports = () => {
           onClose={() => setPrintPreviewOrder(null)}
         />
       )}
+
+      {/* Custom Date Range Modal */}
+      <CustomDateRangeModal
+        isOpen={isCustomDateModalOpen}
+        onClose={() => setIsCustomDateModalOpen(false)}
+        initialStartDate={customStart}
+        initialEndDate={customEnd}
+        onApply={(start, end) => {
+          setCustomStart(start);
+          setCustomEnd(end);
+          setDateFilter('Custom');
+        }}
+      />
     </div>
   );
 };
