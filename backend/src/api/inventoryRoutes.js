@@ -334,7 +334,7 @@ router.get('/production-history', auth(['ADMIN', 'MANAGER']), async (req, res) =
 
 // Produce Finished Product (Consumes raw materials, increases product stock)
 router.post('/produce', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) => {
-  const { finishedProductId, quantity } = req.body;
+  const { finishedProductId, quantity, customItems } = req.body;
   const qtyToProduce = parseFloat(quantity);
 
   if (!finishedProductId || isNaN(qtyToProduce) || qtyToProduce <= 0) {
@@ -342,33 +342,54 @@ router.post('/produce', auth(['ADMIN', 'MANAGER', 'CASHIER']), async (req, res) 
   }
 
   try {
-    // 1. Fetch recipe from RecipeMatrix
-    let recipeEntries = await prisma.recipeMatrix.findMany({
-      where: { finishedProductId },
-      include: { rawMaterial: true }
-    });
+    let recipeEntries = [];
 
-    // Fallback: check Product.recipe JSON if RecipeMatrix has no entries yet
-    if (recipeEntries.length === 0) {
-      const product = await prisma.product.findUnique({ where: { id: finishedProductId } });
-      if (product && Array.isArray(product.recipe) && product.recipe.length > 0) {
-        // Hydrate raw materials
-        const rawIds = product.recipe.map(r => r.rawMaterialId);
-        const rawMaterialsMap = {};
-        const raws = await prisma.rawMaterial.findMany({ where: { id: { in: rawIds } } });
-        raws.forEach(rm => { rawMaterialsMap[rm.id] = rm; });
+    // 1. If customItems provided (Custom / On-the-fly Production), use custom ingredient entries
+    if (Array.isArray(customItems) && customItems.length > 0) {
+      const customRawIds = customItems.map(c => c.rawMaterialId).filter(Boolean);
+      const customRaws = await prisma.rawMaterial.findMany({ where: { id: { in: customRawIds } } });
+      const customRawsMap = {};
+      customRaws.forEach(rm => { customRawsMap[rm.id] = rm; });
 
-        recipeEntries = product.recipe.map(r => ({
-          rawMaterialId: r.rawMaterialId,
-          rawMaterial: rawMaterialsMap[r.rawMaterialId],
-          quantityRequired: parseFloat(r.quantity),
-          unit: r.unit || rawMaterialsMap[r.rawMaterialId]?.unit || 'kg'
-        })).filter(r => r.rawMaterial);
+      recipeEntries = customItems.map(c => {
+        const rm = customRawsMap[c.rawMaterialId];
+        const totalConsumed = c.quantityConsumed !== undefined ? parseFloat(c.quantityConsumed) : (parseFloat(c.quantityRequired || 0) * qtyToProduce);
+        const reqPerUnit = qtyToProduce > 0 ? (totalConsumed / qtyToProduce) : 0;
+        return {
+          rawMaterialId: c.rawMaterialId,
+          rawMaterial: rm,
+          quantityRequired: reqPerUnit,
+          unit: c.unit || rm?.unit || 'kg'
+        };
+      }).filter(r => r.rawMaterial && r.quantityRequired > 0);
+    } else {
+      // Fallback 1a: Fetch recipe from RecipeMatrix
+      recipeEntries = await prisma.recipeMatrix.findMany({
+        where: { finishedProductId },
+        include: { rawMaterial: true }
+      });
+
+      // Fallback 1b: Check Product.recipe JSON if RecipeMatrix has no entries yet
+      if (recipeEntries.length === 0) {
+        const product = await prisma.product.findUnique({ where: { id: finishedProductId } });
+        if (product && Array.isArray(product.recipe) && product.recipe.length > 0) {
+          const rawIds = product.recipe.map(r => r.rawMaterialId);
+          const rawMaterialsMap = {};
+          const raws = await prisma.rawMaterial.findMany({ where: { id: { in: rawIds } } });
+          raws.forEach(rm => { rawMaterialsMap[rm.id] = rm; });
+
+          recipeEntries = product.recipe.map(r => ({
+            rawMaterialId: r.rawMaterialId,
+            rawMaterial: rawMaterialsMap[r.rawMaterialId],
+            quantityRequired: parseFloat(r.quantity),
+            unit: r.unit || rawMaterialsMap[r.rawMaterialId]?.unit || 'kg'
+          })).filter(r => r.rawMaterial);
+        }
       }
     }
 
     if (recipeEntries.length === 0) {
-      return res.status(400).json({ error: 'Finished products cannot be produced without recipes' });
+      return res.status(400).json({ error: 'Finished products cannot be produced without valid ingredients/recipes' });
     }
 
     // 2. Validate stock availability for all raw material ingredients
