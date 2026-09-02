@@ -78,6 +78,12 @@ const StockEntry = () => {
   const [shopClosePreview, setShopClosePreview] = useState<{ productsToClear: any[]; totalStockValue: number } | null>(null);
   const [closingShop, setClosingShop] = useState(false);
 
+  // Categories & Finished Product Modal States
+  const [categories, setCategories] = useState<any[]>([]);
+  const [isRegisterFinishedModalOpen, setIsRegisterFinishedModalOpen] = useState(false);
+  const [isConfirmProductionModalOpen, setIsConfirmProductionModalOpen] = useState(false);
+  const [newFinishedProduct, setNewFinishedProduct] = useState({ name: '', categoryId: '', unit: 'pcs', sellingPrice: '' });
+
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -103,8 +109,44 @@ const StockEntry = () => {
       const prodRes = await api.get('/products');
       setAllProducts(prodRes.data);
 
+      // 6. Categories for product registration
+      const catRes = await api.get('/categories').catch(() => ({ data: [] }));
+      setCategories(catRes.data);
+
     } catch (error) {
       console.error('Error fetching initial stock procurement data:', error);
+    }
+  };
+
+  const handleRegisterFinishedProduct = async () => {
+    if (!newFinishedProduct.name.trim()) return alert('Please enter Product Name');
+    if (!newFinishedProduct.sellingPrice.trim()) return alert('Please enter Selling Price');
+
+    try {
+      const price = parseFloat(newFinishedProduct.sellingPrice);
+      const res = await api.post('/products', {
+        name: newFinishedProduct.name.trim(),
+        categoryId: newFinishedProduct.categoryId || (categories[0]?.id || undefined),
+        unit: newFinishedProduct.unit,
+        sellingPrice: price,
+        mrp: price,
+        purchasePrice: price * 0.6,
+        stockQuantity: 0,
+        availability: true,
+        is_active: true
+      });
+
+      alert(`Finished product "${res.data.name}" registered successfully!`);
+      setIsRegisterFinishedModalOpen(false);
+      setNewFinishedProduct({ name: '', categoryId: '', unit: 'pcs', sellingPrice: '' });
+
+      // Refresh product list and auto-select for custom production
+      const prodRes = await api.get('/products');
+      setAllProducts(prodRes.data);
+      setSelectedProdItem(res.data);
+
+    } catch (err: any) {
+      alert('Failed to register product: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -138,8 +180,38 @@ const StockEntry = () => {
 
   // New Raw Material Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newRawItem, setNewRawItem] = useState({ name: '', unit: 'kg', lowStockThreshold: '10' });
+  const [newRawItem, setNewRawItem] = useState({ name: '', category: '', unit: 'pcs', lowStockThreshold: '10' });
   const [rawSearchQuery, setRawSearchQuery] = useState('');
+
+  // Add Vendor Modal & Dropdown State
+  const [isAddVendorModalOpen, setIsAddVendorModalOpen] = useState(false);
+  const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', gstNo: '' });
+
+  const handleCreateVendor = async () => {
+    if (!newVendor.name.trim()) return alert('Please enter Vendor Name');
+
+    try {
+      const res = await api.post('/suppliers', {
+        name: newVendor.name.trim(),
+        phone: newVendor.phone.trim() || null,
+        address: newVendor.address.trim() || null
+      });
+
+      alert(`Vendor "${res.data.name}" registered successfully!`);
+      setIsAddVendorModalOpen(false);
+      setNewVendor({ name: '', phone: '', address: '', gstNo: '' });
+
+      // Refresh suppliers list and auto-select
+      const supRes = await api.get('/suppliers');
+      setSuppliers(supRes.data);
+      setSupplierName(res.data.name);
+      setSelectedSupplierId(res.data.id);
+
+    } catch (err: any) {
+      alert('Failed to create vendor: ' + (err.response?.data?.error || err.message));
+    }
+  };
 
   // Add raw material item directly to draft procurement cart
   const handleAddRawToCart = (raw: any) => {
@@ -153,7 +225,7 @@ const StockEntry = () => {
       setCart([...cart, {
         rawMaterialId: raw.id,
         name: raw.name,
-        unit: raw.unit || 'kg',
+        unit: raw.unit || 'pcs',
         quantity: 1,
         price: 0,
         total: 0
@@ -179,19 +251,20 @@ const StockEntry = () => {
   };
 
   const handleCreateRawMaterial = async () => {
-    if (!newRawItem.name.trim()) return alert('Please enter Raw Material Name');
+    if (!newRawItem.name.trim()) return alert('Please enter Product Name');
     
     try {
       const res = await api.post('/inventory/raw-materials', {
         name: newRawItem.name.trim(),
         unit: newRawItem.unit,
+        category: newRawItem.category.trim() || undefined,
         stockQuantity: 0,
         lowStockThreshold: parseFloat(newRawItem.lowStockThreshold) || 10
       });
 
-      alert(`Raw material "${res.data.name}" created successfully!`);
+      alert(`Product "${res.data.name}" added to catalog & draft successfully!`);
       setIsCreateModalOpen(false);
-      setNewRawItem({ name: '', unit: 'kg', lowStockThreshold: '10' });
+      setNewRawItem({ name: '', category: '', unit: 'pcs', lowStockThreshold: '10' });
 
       // Refresh catalog and auto-add to cart
       const updatedRawList = await api.get('/inventory/raw-materials');
@@ -199,7 +272,7 @@ const StockEntry = () => {
 
       handleAddRawToCart(res.data);
     } catch (err: any) {
-      alert('Failed to create raw material: ' + (err.response?.data?.error || err.message));
+      alert('Failed to create product: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -310,8 +383,10 @@ const StockEntry = () => {
     setCustomIngredients(updated);
   };
 
-  const handleConfirmProduction = async () => {
-    if (!selectedProdItem || produceQty <= 0) return;
+  const handleInitiateProduction = () => {
+    if (!selectedProdItem || produceQty <= 0) {
+      return alert('Please select a product to produce.');
+    }
 
     if (productionMode === 'CUSTOM') {
       const validCustom = customIngredients.filter(c => c.rawMaterialId && parseFloat(c.quantityConsumed) > 0);
@@ -319,6 +394,12 @@ const StockEntry = () => {
         return alert('Please add at least one valid ingredient with quantity > 0 for Custom Production.');
       }
     }
+
+    setIsConfirmProductionModalOpen(true);
+  };
+
+  const handleConfirmProduction = async () => {
+    if (!selectedProdItem || produceQty <= 0) return;
 
     setProducing(true);
     setInsufficientStockError(null);
@@ -343,6 +424,7 @@ const StockEntry = () => {
 
       alert(`Successfully produced ${produceQty} ${selectedProdItem.unit || 'pcs'} of ${selectedProdItem.name}! Finished product stock updated.`);
       
+      setIsConfirmProductionModalOpen(false);
       setIsProduceModalOpen(false);
       setSelectedProdItem(null);
 
@@ -355,6 +437,7 @@ const StockEntry = () => {
     } catch (err: any) {
       console.error('Production error:', err);
       if (err.response?.data?.insufficient) {
+        setIsConfirmProductionModalOpen(false);
         setInsufficientStockError(err.response.data.insufficient);
       } else {
         alert('Production Failed: ' + (err.response?.data?.error || err.message));
@@ -479,29 +562,79 @@ const StockEntry = () => {
                       <span>✨ SOURCING DETAILS</span>
                     </div>
 
-                    {/* VENDOR NAME SELECT/INPUT */}
+                    {/* VENDOR NAME FIELD CONTAINER */}
                     <div className="space-y-1 relative">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                      <label className="text-[11px] font-black uppercase text-pink-600 tracking-wider block">
                         VENDOR NAME *
                       </label>
-                      <div className="relative">
-                        <select
-                          className="w-full p-3.5 bg-white border-2 border-slate-200 focus:border-pink-500 rounded-2xl font-black text-sm text-slate-900 appearance-none outline-none transition-all pr-10"
-                          value={selectedSupplierId}
+                      <div 
+                        className="relative w-full p-3 bg-white border-2 border-pink-500 rounded-2xl shadow-sm cursor-pointer flex items-center justify-between"
+                        onClick={() => setShowVendorDropdown(!showVendorDropdown)}
+                      >
+                        <input
+                          type="text"
+                          placeholder="Select or search vendor..."
+                          value={supplierName}
                           onChange={(e) => {
-                            const supId = e.target.value;
-                            setSelectedSupplierId(supId);
-                            const found = suppliers.find(s => s.id === supId);
-                            if (found) setSupplierName(found.name);
+                            setSupplierName(e.target.value);
+                            setShowVendorDropdown(true);
                           }}
-                        >
-                          <option value="">Select Vendor...</option>
-                          {suppliers.map((s, idx) => (
-                            <option key={idx} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          onFocus={() => setShowVendorDropdown(true)}
+                          className="w-full bg-transparent border-none outline-none font-bold text-slate-800 text-sm placeholder:text-slate-300 p-0 pr-2"
+                        />
+                        <ChevronDown size={18} className="text-slate-400 shrink-0 pointer-events-none" />
                       </div>
+
+                      {/* DROPDOWN MENU MATCHING SCREENSHOT */}
+                      {showVendorDropdown && (
+                        <div className="absolute z-50 left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                          <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
+                            {suppliers
+                              .filter(s => s.name.toLowerCase().includes((supplierName || '').toLowerCase()))
+                              .map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSupplierName(s.name);
+                                    setSelectedSupplierId(s.id);
+                                    setShowVendorDropdown(false);
+                                  }}
+                                  className="w-full p-4 text-left hover:bg-pink-50/40 flex items-center justify-between transition-colors group"
+                                >
+                                  <div>
+                                    <div className="font-black text-slate-900 text-sm group-hover:text-pink-600 transition-colors">
+                                      {s.name}
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-400 mt-0.5">
+                                      {s.phone || 'No Phone'}
+                                    </div>
+                                  </div>
+                                  <User size={18} className="text-slate-300 group-hover:text-pink-500 transition-colors" />
+                                </button>
+                              ))}
+
+                            {suppliers.filter(s => s.name.toLowerCase().includes((supplierName || '').toLowerCase())).length === 0 && (
+                              <div className="p-4 text-center text-xs font-bold text-slate-400 italic">
+                                No matching vendors found
+                              </div>
+                            )}
+                          </div>
+
+                          {/* + ADD NEW VENDOR FOOTER */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowVendorDropdown(false);
+                              setIsAddVendorModalOpen(true);
+                            }}
+                            className="w-full py-3.5 bg-indigo-50/80 hover:bg-indigo-100/80 text-indigo-600 border-t border-indigo-100 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <Plus size={16} />
+                            <span>ADD NEW VENDOR</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* INVOICE NUMBER / REF */}
@@ -608,12 +741,29 @@ const StockEntry = () => {
                       </div>
                     ) : (
                       <div className="space-y-3 pt-2">
-                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                          {cart.map((item, idx) => (
-                            <div key={idx} className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs font-bold">
-                              <span className="flex-1 font-black text-slate-900 min-w-[140px]">{item.name}</span>
+                        {/* Table Header Row */}
+                        <div className="grid grid-cols-12 gap-2 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                          <div className="col-span-4">PRODUCT NAME</div>
+                          <div className="col-span-3 text-center">QUANTITY</div>
+                          <div className="col-span-3 text-center">UNIT PRICE</div>
+                          <div className="col-span-2 text-right">TOTAL</div>
+                        </div>
 
-                              <div className="flex items-center gap-1.5">
+                        {/* Cart Item Rows */}
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {cart.map((item, idx) => (
+                            <div key={idx} className="grid grid-cols-12 gap-2 items-center p-4 bg-slate-50/70 hover:bg-slate-100/70 rounded-2xl border border-slate-100 transition-colors">
+                              
+                              {/* PRODUCT NAME & CATEGORY TAG */}
+                              <div className="col-span-4 min-w-0">
+                                <span className="font-black text-slate-900 text-sm block truncate">{item.name}</span>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mt-0.5">
+                                  {item.category || 'RAW MATERIALS'} ({(item.unit || 'kg').toUpperCase()})
+                                </span>
+                              </div>
+
+                              {/* QUANTITY INPUT */}
+                              <div className="col-span-3 flex justify-center">
                                 <input
                                   type="number"
                                   step="0.001"
@@ -621,42 +771,38 @@ const StockEntry = () => {
                                   placeholder="Qty"
                                   value={item.quantity === 0 ? '' : item.quantity}
                                   onChange={(e) => handleUpdateCartItem(idx, 'quantity', e.target.value)}
-                                  className="w-20 p-2 bg-white border border-slate-200 rounded-xl font-black text-center text-slate-900 text-xs"
+                                  className="w-20 p-2 bg-white border-2 border-slate-800 focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
                                 />
-                                <select
-                                  value={item.unit}
-                                  onChange={(e) => handleUpdateCartItem(idx, 'unit', e.target.value)}
-                                  className="p-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-xs"
-                                >
-                                  <option value="kg">kg</option>
-                                  <option value="gram">g</option>
-                                  <option value="litre">ltr</option>
-                                  <option value="ml">ml</option>
-                                  <option value="pcs">pcs</option>
-                                </select>
                               </div>
 
-                              <div className="flex items-center gap-1">
-                                <span className="text-slate-400">₹</span>
+                              {/* UNIT PRICE INPUT */}
+                              <div className="col-span-3 flex items-center justify-center gap-1">
+                                <span className="text-slate-400 text-xs font-bold">₹</span>
                                 <input
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  placeholder="Price"
+                                  placeholder="0"
                                   value={item.price === 0 ? '' : item.price}
                                   onChange={(e) => handleUpdateCartItem(idx, 'price', e.target.value)}
-                                  className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-black text-center text-slate-900 text-xs"
+                                  className="w-24 p-2 bg-slate-100/70 border border-slate-200 focus:bg-white focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
                                 />
                               </div>
 
-                              <span className="w-24 text-right font-black text-slate-900">₹{item.total.toFixed(2)}</span>
+                              {/* TOTAL AMOUNT & DELETE BUTTON */}
+                              <div className="col-span-2 flex items-center justify-end gap-2">
+                                <span className="font-black text-slate-900 font-mono text-sm">
+                                  ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCartItem(idx)}
+                                  className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded-lg"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
 
-                              <button
-                                onClick={() => handleRemoveCartItem(idx)}
-                                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
                             </div>
                           ))}
                         </div>
@@ -846,256 +992,381 @@ const StockEntry = () => {
           )}
         </div>
 
-        {/* PRODUCTION MODAL */}
-        {isProduceModalOpen && selectedProdItem && (
+        {/* CUSTOM PRODUCTION MODAL (MATCHING SCREENSHOT 1) */}
+        {isProduceModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl p-6 md:p-8 relative animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-              <button 
-                onClick={() => setIsProduceModalOpen(false)}
-                className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X size={20} />
-              </button>
-
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-brand-50 text-brand-primary rounded-2xl flex items-center justify-center font-black text-xl border border-brand-100 shrink-0">
-                  <ChefHat size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Produce {selectedProdItem.name}</h2>
-                  <p className="text-xs font-bold text-slate-400">Current POS Stock: <span className="text-emerald-600 font-extrabold">{selectedProdItem.stockQuantity} {selectedProdItem.unit || 'pcs'}</span></p>
-                </div>
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+              
+              {/* DARK NAVY HEADER BAR */}
+              <div className="bg-[#111625] p-6 text-white relative shrink-0">
+                <button 
+                  type="button"
+                  onClick={() => setIsProduceModalOpen(false)}
+                  className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors p-1"
+                >
+                  <X size={20} />
+                </button>
+                <h2 className="text-xl font-black uppercase tracking-wider text-white">CUSTOM PRODUCTION</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
+                  PRODUCE A FINISHED PRODUCT BY CHOOSING INGREDIENTS ON-THE-FLY
+                </p>
               </div>
 
-              {/* Mode Switcher: Recipe vs Custom */}
-              <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProductionMode('RECIPE');
-                    const recipe = selectedProdItem.recipeMatrix || selectedProdItem.recipe || [];
-                    setCustomIngredients(
-                      recipe.map((r: any) => ({
-                        rawMaterialId: r.rawMaterialId,
-                        name: r.rawMaterial?.name || rawMaterials.find(rm => rm.id === r.rawMaterialId)?.name || 'Ingredient',
-                        quantityConsumed: (r.quantityRequired || r.quantity || 0) * produceQty,
-                        unit: r.unit || r.rawMaterial?.unit || 'kg'
-                      }))
-                    );
-                  }}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                    productionMode === 'RECIPE'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Recipe Matrix Production
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProductionMode('CUSTOM')}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                    productionMode === 'CUSTOM'
-                      ? 'bg-white text-brand-primary shadow-md'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Custom Production (On-The-Fly)
-                </button>
-              </div>
-
-              {/* Insufficient Stock Error Banner */}
-              {insufficientStockError && (
-                <div className="mb-6 bg-red-50 border-2 border-red-200 p-4 rounded-2xl space-y-2 animate-in fade-in">
-                  <div className="flex items-center gap-2 text-red-700 font-black text-xs uppercase tracking-wider">
-                    <AlertTriangle size={18} />
-                    <span>Insufficient Stock - Production Blocked</span>
-                  </div>
-                  <table className="w-full text-left text-xs mt-2">
-                    <thead>
-                      <tr className="text-red-500 font-bold uppercase text-[9px] border-b border-red-200">
-                        <th className="pb-1">Ingredient</th>
-                        <th className="pb-1">Available Stock</th>
-                        <th className="pb-1">Required for Batch</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-red-100 font-bold text-red-900">
-                      {insufficientStockError.map((item: any, idx: number) => (
-                        <tr key={idx}>
-                          <td className="py-1">{item.ingredient}</td>
-                          <td className="py-1 text-red-600">{item.available?.toFixed(3)} {item.unit}</td>
-                          <td className="py-1 text-red-700 font-extrabold">{item.required?.toFixed(3)} {item.unit}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Production Quantity Selector */}
-              <div className="space-y-4 mb-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Production Batch Quantity ({selectedProdItem.unit || 'pcs'})</label>
-                  <input 
-                    type="number"
-                    min="1"
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-900 text-center"
-                    value={produceQty}
-                    onChange={(e) => handleQtyChange(Math.max(1, parseInt(e.target.value) || 0))}
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  {[5, 10, 25, 50, 100].map(qty => (
-                    <button
-                      key={qty}
-                      type="button"
-                      onClick={() => handleQtyChange(qty)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
-                        produceQty === qty ? 'bg-brand-primary text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+              {/* FORM BODY */}
+              <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
+                
+                {/* PRODUCT TO PRODUCE * */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-pink-600 tracking-wider block">
+                    PRODUCT TO PRODUCE *
+                  </label>
+                  <div className="border-2 border-pink-500 rounded-2xl p-3 bg-white relative">
+                    <select
+                      value={selectedProdItem?.id || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'REGISTER_NEW') {
+                          setIsRegisterFinishedModalOpen(true);
+                        } else {
+                          const prod = allProducts.find(p => p.id === val);
+                          if (prod) handleOpenProductionModal(prod);
+                        }
+                      }}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 appearance-none outline-none pr-8 cursor-pointer"
                     >
-                      +{qty}
-                    </button>
-                  ))}
+                      <option value="">-- Select Product --</option>
+                      <option value="REGISTER_NEW" className="text-pink-600 font-bold">
+                        + Register New Finished Product
+                      </option>
+                      {allProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (Stock: {p.stockQuantity} {p.unit || 'pcs'})
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
                 </div>
 
-                {/* RECIPE MODE INGREDIENT CONSUMPTION PREVIEW */}
-                {productionMode === 'RECIPE' && (
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Standard Recipe Consumption Plan</span>
-                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                      {(selectedProdItem.recipeMatrix || selectedProdItem.recipe || []).map((rm: any, idx: number) => {
-                        const required = (rm.quantityRequired || rm.quantity || 0) * produceQty;
-                        return (
-                          <div key={idx} className="flex justify-between text-xs font-bold py-1.5 border-b border-slate-100 last:border-0">
-                            <span className="text-slate-700">{rm.rawMaterial?.name || rawMaterials.find(r => r.id === rm.rawMaterialId)?.name || 'Raw Material'}</span>
-                            <span className="text-slate-900 font-mono font-black">-{required.toFixed(3)} {rm.unit || 'kg'}</span>
-                          </div>
-                        );
-                      })}
-                      {(selectedProdItem.recipeMatrix || selectedProdItem.recipe || []).length === 0 && (
-                        <p className="text-xs text-slate-400 italic py-2">No recipe matrix mapped. Switch to Custom Production tab above.</p>
-                      )}
-                    </div>
+                {/* QUANTITY TO PRODUCE * (MATCHING SCREENSHOT 1) */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-pink-600 tracking-wider block">
+                    QUANTITY TO PRODUCE *
+                  </label>
+                  <div className="border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3 bg-white transition-colors">
+                    <input 
+                      type="number"
+                      min="1"
+                      placeholder="1"
+                      value={produceQty}
+                      onChange={(e) => handleQtyChange(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 outline-none p-0"
+                    />
                   </div>
-                )}
+                </div>
 
-                {/* CUSTOM MODE INGREDIENT BUILDER */}
-                {productionMode === 'CUSTOM' && (
-                  <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black uppercase text-amber-900 tracking-wider">Custom Raw Material Ingredients</span>
-                      <button
-                        type="button"
-                        onClick={addCustomIngredientRow}
-                        className="text-brand-primary font-black text-xs uppercase tracking-wider hover:underline"
-                      >
-                        + Add Ingredient
-                      </button>
-                    </div>
+                {/* INGREDIENTS BUILDER SECTION */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    <span>INGREDIENT (RAW MATERIAL)</span>
+                    <span>TOTAL QTY / UNIT</span>
+                  </div>
 
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {customIngredients.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-amber-100 shadow-sm">
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {customIngredients.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-3">
+                        
+                        {/* INGREDIENT DROPDOWN */}
+                        <div className="flex-1 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50 relative">
                           <select
-                            className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs"
                             value={item.rawMaterialId}
                             onChange={(e) => updateCustomIngredientRow(idx, 'rawMaterialId', e.target.value)}
+                            className="w-full bg-transparent border-none font-bold text-xs text-slate-900 appearance-none outline-none pr-6 cursor-pointer"
                           >
-                            <option value="">-- Choose Raw Material --</option>
+                            <option value="">-- Choose Ingredient --</option>
                             {rawMaterials.map(rm => (
-                              <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>
+                              <option key={rm.id} value={rm.id}>
+                                {rm.name} (Available: {rm.stockQuantity} {rm.unit})
+                              </option>
                             ))}
                           </select>
-
-                          <div className="relative w-28">
-                            <input 
-                              type="number"
-                              step="0.001"
-                              placeholder="Qty consumed"
-                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-black text-xs text-center pr-6"
-                              value={item.quantityConsumed === 0 ? '' : item.quantityConsumed}
-                              onChange={(e) => updateCustomIngredientRow(idx, 'quantityConsumed', e.target.value)}
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">{item.unit}</span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => removeCustomIngredientRow(idx)}
-                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash size={14} />
-                          </button>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {/* HIGH VISIBILITY PRODUCTION CONFIRMATION BOX */}
-                <div className="bg-slate-900 text-white p-5 rounded-2xl space-y-3 shadow-lg">
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b border-slate-800 pb-2">
-                    PRODUCTION CONFIRMATION SUMMARY
-                  </span>
+                        {/* QTY & UNIT */}
+                        <div className="flex items-center gap-2 bg-slate-50/50 p-1.5 rounded-xl border border-slate-100">
+                          <input 
+                            type="number"
+                            step="0.001"
+                            placeholder="Qty"
+                            value={item.quantityConsumed === 0 ? '' : item.quantityConsumed}
+                            onChange={(e) => updateCustomIngredientRow(idx, 'quantityConsumed', e.target.value)}
+                            className="w-16 p-2 bg-white border border-slate-200 rounded-lg font-black text-center text-xs text-slate-900 outline-none"
+                          />
+                          <span className="text-[10px] font-black text-slate-400 uppercase w-8 text-center">
+                            {item.unit || 'UNIT'}
+                          </span>
+                        </div>
 
-                  <div className="space-y-2 text-xs font-bold">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-300">WHAT WILL BE PRODUCED:</span>
-                      <span className="bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-black text-sm">
-                        {selectedProdItem.name} × {produceQty} {selectedProdItem.unit || 'pcs'}
-                      </span>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-800">
-                      <span className="text-slate-400 text-[10px] uppercase block mb-1">WHAT WILL BE CONSUMED FROM RAW STOCK:</span>
-                      <div className="space-y-1 pl-2 font-mono text-emerald-400 text-xs">
-                        {(productionMode === 'RECIPE'
-                          ? (selectedProdItem.recipeMatrix || selectedProdItem.recipe || []).map((rm: any) => ({
-                              name: rm.rawMaterial?.name || rawMaterials.find(r => r.id === rm.rawMaterialId)?.name || 'Ingredient',
-                              weight: ((rm.quantityRequired || rm.quantity || 0) * produceQty).toFixed(3),
-                              unit: rm.unit || 'kg'
-                            }))
-                          : customIngredients.filter(c => c.rawMaterialId && c.quantityConsumed > 0).map(c => ({
-                              name: c.name || rawMaterials.find(r => r.id === c.rawMaterialId)?.name || 'Ingredient',
-                              weight: parseFloat(c.quantityConsumed).toFixed(3),
-                              unit: c.unit || 'kg'
-                            }))
-                        ).map((cp, idx) => (
-                          <div key={idx} className="flex justify-between">
-                            <span>• {cp.name}</span>
-                            <span>-{cp.weight} {cp.unit}</span>
-                          </div>
-                        ))}
-
-                        {(productionMode === 'CUSTOM' ? customIngredients.filter(c => c.rawMaterialId && c.quantityConsumed > 0).length : (selectedProdItem.recipeMatrix || selectedProdItem.recipe || []).length) === 0 && (
-                          <span className="text-amber-400 text-xs font-sans italic">No ingredient consumption set!</span>
-                        )}
+                        {/* DELETE ROW */}
+                        <button
+                          type="button"
+                          onClick={() => removeCustomIngredientRow(idx)}
+                          className="p-1.5 text-red-500 hover:text-red-700 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
+                    ))}
+                  </div>
+
+                  {/* + ADD INGREDIENT ROW */}
+                  <button
+                    type="button"
+                    onClick={addCustomIngredientRow}
+                    className="text-pink-600 font-black text-xs uppercase tracking-wider hover:underline flex items-center gap-1 cursor-pointer pt-1"
+                  >
+                    + ADD INGREDIENT ROW
+                  </button>
+                </div>
+
+                {/* ACTION BUTTONS MATCHING SCREENSHOT 1 */}
+                <div className="flex gap-4 pt-4 border-t border-slate-100">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsProduceModalOpen(false)}
+                    className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl font-black text-sm uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={!selectedProdItem}
+                    onClick={handleInitiateProduction}
+                    className="flex-1 py-4 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg shadow-pink-600/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <span>Produce & Update Stock</span>
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* CONFIRM PRODUCTION MODAL (MATCHING SCREENSHOT 3) */}
+        {isConfirmProductionModalOpen && selectedProdItem && (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200">
+              
+              {/* DARK NAVY HEADER BAR */}
+              <div className="bg-[#111625] p-6 text-white relative">
+                <button 
+                  type="button"
+                  onClick={() => setIsConfirmProductionModalOpen(false)}
+                  className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors p-1"
+                >
+                  <X size={20} />
+                </button>
+                <h2 className="text-xl font-black uppercase tracking-wider text-white">CONFIRM PRODUCTION</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
+                  VERIFY KITCHEN PRODUCTION RUN
+                </p>
+              </div>
+
+              {/* FORM BODY */}
+              <div className="p-6 md:p-8 space-y-6">
+                
+                {/* PRODUCTS TO PRODUCE */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    PRODUCTS TO PRODUCE:
+                  </span>
+                  <div className="bg-blue-50/40 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
+                    <span className="font-black text-slate-900 text-sm">{selectedProdItem.name}</span>
+                    <span className="bg-blue-100/70 text-blue-700 px-3 py-1 rounded-xl font-black text-xs">
+                      × {produceQty} {selectedProdItem.unit || 'pcs'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* INGREDIENTS CONSUMED */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    INGREDIENTS CONSUMED:
+                  </span>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {customIngredients.filter(c => c.rawMaterialId && c.quantityConsumed > 0).map((item, idx) => (
+                      <div key={idx} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center justify-between">
+                        <span className="font-bold text-slate-800 text-xs">{item.name}</span>
+                        <span className="font-black text-red-600 text-sm">
+                          -{parseFloat(item.quantityConsumed).toFixed(2)} {item.unit || 'kg'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* EXPECTED RESULT */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    EXPECTED RESULT:
+                  </span>
+                  <div className="bg-emerald-50/60 border border-emerald-200/60 rounded-2xl p-4 space-y-1.5">
+                    <div className="flex items-center gap-2 text-emerald-800 font-black text-xs">
+                      <span>•</span>
+                      <span>Finished Product Stock +{produceQty} {selectedProdItem.unit || 'pcs'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-emerald-800 font-black text-xs">
+                      <span>•</span>
+                      <span>Raw Material Stock Decreased automatically</span>
                     </div>
                   </div>
                 </div>
+
+                {/* ACTION BUTTONS MATCHING SCREENSHOT 3 */}
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsConfirmProductionModalOpen(false)}
+                    className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={producing}
+                    onClick={handleConfirmProduction}
+                    className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-600/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {producing && <Loader2 size={16} className="animate-spin" />}
+                    <span>PRODUCE & UPDATE STOCK</span>
+                  </button>
+                </div>
+
               </div>
 
-              <div className="flex gap-3 justify-end pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setIsProduceModalOpen(false)}
-                  className="px-5 py-3 rounded-xl font-bold text-xs text-slate-500 hover:bg-slate-100 uppercase tracking-wider"
-                >
-                  Cancel
-                </button>
+            </div>
+          </div>
+        )}
+
+        {/* REGISTER FINISHED PRODUCT MODAL (MATCHING SCREENSHOT 2) */}
+        {isRegisterFinishedModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200">
+              
+              {/* DARK NAVY HEADER BAR */}
+              <div className="bg-[#111625] p-6 text-white relative">
                 <button 
                   type="button"
-                  disabled={producing}
-                  onClick={handleConfirmProduction}
-                  className="px-6 py-3.5 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-brand-primary/20 flex items-center gap-2"
+                  onClick={() => setIsRegisterFinishedModalOpen(false)}
+                  className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors p-1"
                 >
-                  {producing && <Loader2 size={16} className="animate-spin" />}
-                  <span>PRODUCE & UPDATE STOCK</span>
+                  <X size={20} />
                 </button>
+                <h2 className="text-xl font-black uppercase tracking-wider text-white">REGISTER FINISHED PRODUCT</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
+                  CREATE A SELLING ITEM FOR PRODUCTION
+                </p>
               </div>
+
+              {/* FORM BODY */}
+              <div className="p-6 md:p-8 space-y-5">
+                
+                {/* PRODUCT NAME * * */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-pink-600 tracking-wider block">
+                    PRODUCT NAME * *
+                  </label>
+                  <div className="border-2 border-slate-900 focus-within:border-pink-500 rounded-2xl p-3 bg-white transition-colors">
+                    <input 
+                      type="text"
+                      placeholder="e.g. Kappa Biriyani"
+                      value={newFinishedProduct.name}
+                      onChange={(e) => setNewFinishedProduct({ ...newFinishedProduct, name: e.target.value })}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none p-0"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* PRODUCT CATEGORY */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider block">
+                    PRODUCT CATEGORY
+                  </label>
+                  <div className="relative border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3 bg-white transition-colors">
+                    <select
+                      value={newFinishedProduct.categoryId}
+                      onChange={(e) => setNewFinishedProduct({ ...newFinishedProduct, categoryId: e.target.value })}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 appearance-none outline-none p-0 pr-8 cursor-pointer"
+                    >
+                      <option value="">-- Choose Category --</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* UNIT OF MEASURE */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider block">
+                    UNIT OF MEASURE
+                  </label>
+                  <div className="relative border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3 bg-white transition-colors">
+                    <select
+                      value={newFinishedProduct.unit}
+                      onChange={(e) => setNewFinishedProduct({ ...newFinishedProduct, unit: e.target.value })}
+                      className="w-full bg-transparent border-none font-black text-sm text-slate-900 appearance-none outline-none p-0 pr-8 cursor-pointer"
+                    >
+                      <option value="pcs">pcs</option>
+                      <option value="kg">kg</option>
+                      <option value="portion">portion</option>
+                      <option value="plate">plate</option>
+                      <option value="cup">cup</option>
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* SELLING PRICE (₹) * * */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-pink-600 tracking-wider block">
+                    SELLING PRICE (₹) * *
+                  </label>
+                  <div className="border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3 bg-white transition-colors">
+                    <input 
+                      type="number"
+                      placeholder="e.g. 130"
+                      value={newFinishedProduct.sellingPrice}
+                      onChange={(e) => setNewFinishedProduct({ ...newFinishedProduct, sellingPrice: e.target.value })}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none p-0"
+                    />
+                  </div>
+                </div>
+
+                {/* ACTION BUTTONS MATCHING SCREENSHOT 2 */}
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsRegisterFinishedModalOpen(false)}
+                    className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl font-black text-sm uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleRegisterFinishedProduct}
+                    className="flex-1 py-4 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg shadow-pink-600/20 transition-colors"
+                  >
+                    Add Product
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
@@ -1207,90 +1478,184 @@ const StockEntry = () => {
           </div>
         )}
 
-        {/* CREATE NEW RAW MATERIAL MODAL */}
+        {/* CREATE NEW PRODUCT MODAL (CATALOG ADD) */}
         {isCreateModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200">
+              
+              {/* DARK NAVY HEADER BAR MATCHING SCREENSHOT */}
+              <div className="bg-[#111625] p-6 text-white relative">
+                <button 
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors p-1"
+                >
+                  <X size={20} />
+                </button>
+                <h2 className="text-xl font-black uppercase tracking-wider text-white">CATALOG ADD</h2>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
+                  CREATE A NEW PRODUCT RECORD
+                </p>
+              </div>
+
+              {/* FORM BODY */}
+              <div className="p-6 md:p-8 space-y-6">
+                
+                {/* PRODUCT NAME * */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider block">
+                    PRODUCT NAME *
+                  </label>
+                  <div className="border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3.5 bg-white transition-colors">
+                    <input 
+                      type="text"
+                      placeholder="e.g. Organic Tomatoes"
+                      value={newRawItem.name}
+                      onChange={(e) => setNewRawItem({ ...newRawItem, name: e.target.value })}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none p-0"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* PRODUCT CATEGORY */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider block">
+                    PRODUCT CATEGORY
+                  </label>
+                  <div className="border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3.5 bg-white transition-colors">
+                    <input 
+                      type="text"
+                      placeholder="e.g. Vegetables, Grocery"
+                      value={newRawItem.category}
+                      onChange={(e) => setNewRawItem({ ...newRawItem, category: e.target.value })}
+                      className="w-full bg-transparent border-none font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none p-0"
+                    />
+                  </div>
+                </div>
+
+                {/* UNIT OF MEASURE */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-400 tracking-wider block">
+                    UNIT OF MEASURE
+                  </label>
+                  <div className="relative border-2 border-slate-200 focus-within:border-pink-500 rounded-2xl p-3.5 bg-white transition-colors">
+                    <select
+                      value={newRawItem.unit}
+                      onChange={(e) => setNewRawItem({ ...newRawItem, unit: e.target.value })}
+                      className="w-full bg-transparent border-none font-black text-sm text-slate-900 appearance-none outline-none p-0 pr-8 cursor-pointer"
+                    >
+                      <option value="pcs">pcs</option>
+                      <option value="kg">kg</option>
+                      <option value="gram">g</option>
+                      <option value="litre">ltr</option>
+                      <option value="ml">ml</option>
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* ACTION BUTTONS MATCHING SCREENSHOT */}
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="flex-1 py-4 bg-slate-100/80 hover:bg-slate-200/80 text-slate-800 rounded-2xl font-black text-sm uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleCreateRawMaterial}
+                    className="flex-1 py-4 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg shadow-pink-600/20 transition-colors"
+                  >
+                    Add Product
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ADD NEW VENDOR MODAL */}
+        {isAddVendorModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 md:p-8 relative animate-in zoom-in-95 duration-200">
               <button 
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsAddVendorModalOpen(false)}
                 className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-1"
               >
                 <X size={20} />
               </button>
 
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-black text-xl border border-indigo-100 shrink-0">
-                  <Plus size={24} />
+                <div className="w-12 h-12 bg-pink-50 text-pink-600 rounded-2xl flex items-center justify-center font-black text-xl border border-pink-100 shrink-0">
+                  <User size={24} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-slate-900">Create Raw Material "NEW"</h2>
-                  <p className="text-xs font-bold text-slate-400">Register new ingredient into catalog & draft cart.</p>
+                  <h2 className="text-lg font-black text-slate-900">Add New Vendor / Supplier</h2>
+                  <p className="text-xs font-bold text-slate-400">Register new sourcing partner into supplier registry.</p>
                 </div>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
-                    Raw Material Name *
+                    Vendor / Party Name *
                   </label>
                   <input 
                     type="text"
-                    placeholder="e.g. Fresh Tomato"
-                    value={newRawItem.name}
-                    onChange={(e) => setNewRawItem({ ...newRawItem, name: e.target.value })}
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. Aymen Sourcing"
+                    value={newVendor.name}
+                    onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-pink-500"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
-                      Standard Unit *
-                    </label>
-                    <select
-                      value={newRawItem.unit}
-                      onChange={(e) => setNewRawItem({ ...newRawItem, unit: e.target.value })}
-                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="kg">kg</option>
-                      <option value="gram">g</option>
-                      <option value="litre">ltr</option>
-                      <option value="ml">ml</option>
-                      <option value="pcs">pcs</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                    Contact / Phone Number
+                  </label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. 96334 38625"
+                    value={newVendor.phone}
+                    onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-pink-500"
+                  />
+                </div>
 
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
-                      Low Stock Threshold
-                    </label>
-                    <input 
-                      type="number"
-                      placeholder="10"
-                      value={newRawItem.lowStockThreshold}
-                      onChange={(e) => setNewRawItem({ ...newRawItem, lowStockThreshold: e.target.value })}
-                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                    Address / Location
+                  </label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Market Yard Road"
+                    value={newVendor.address}
+                    onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm text-slate-900 outline-none focus:ring-2 focus:ring-pink-500"
+                  />
                 </div>
               </div>
 
               <div className="flex gap-3 justify-end pt-2">
                 <button 
                   type="button" 
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={() => setIsAddVendorModalOpen(false)}
                   className="px-5 py-3 rounded-xl font-bold text-xs text-slate-500 hover:bg-slate-100 uppercase tracking-wider"
                 >
                   Cancel
                 </button>
                 <button 
                   type="button"
-                  onClick={handleCreateRawMaterial}
-                  className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/20 flex items-center gap-2"
+                  onClick={handleCreateVendor}
+                  className="px-6 py-3.5 bg-pink-600 hover:bg-pink-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-pink-600/20 flex items-center gap-2"
                 >
                   <Save size={16} />
-                  <span>Save & Add to Draft</span>
+                  <span>Save Vendor</span>
                 </button>
               </div>
             </div>
