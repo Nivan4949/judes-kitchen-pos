@@ -344,6 +344,16 @@ const StockEntry = () => {
     setIsProduceModalOpen(true);
   };
 
+  const handleOpenCustomProduction = () => {
+    const defaultProd = allProducts[0] || null;
+    setSelectedProdItem(defaultProd);
+    setProduceQty(1);
+    setProductionMode('CUSTOM');
+    setCustomIngredients([{ rawMaterialId: '', name: '', quantityConsumed: 0, unit: 'kg' }]);
+    setInsufficientStockError(null);
+    setIsProduceModalOpen(true);
+  };
+
   const handleQtyChange = (newQty: number) => {
     setProduceQty(newQty);
     // Auto-scale custom ingredients if recipe mode or custom pre-filled
@@ -856,6 +866,85 @@ const StockEntry = () => {
                     </div>
                   </div>
 
+                  {/* FINISHED PRODUCTS PRODUCTION CARD MATCHING SCREENSHOT */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h2 className="text-sm md:text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                          <ChefHat className="text-indigo-600" size={20} />
+                          FINISHED PRODUCTS PRODUCTION
+                        </h2>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                          DISPLAYING FINISHED PRODUCTS WITH MAPPED RECIPES. CLICK (+) TO ADD TO PRODUCTION CART.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <button
+                          type="button"
+                          onClick={handleOpenCustomProduction}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-transform active:scale-95 shrink-0"
+                        >
+                          <Plus size={16} />
+                          <span>CUSTOM PRODUCTION</span>
+                        </button>
+
+                        <div className="relative w-full md:w-64">
+                          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input 
+                            type="text"
+                            placeholder="Search recipes..."
+                            value={productionSearch}
+                            onChange={(e) => setProductionSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Finished Products Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                      {eligibleProducts
+                        .filter(p => p.name.toLowerCase().includes(productionSearch.toLowerCase()))
+                        .map(prod => {
+                          const recipes = prod.recipeMatrix || prod.recipe || [];
+
+                          return (
+                            <div key={prod.id} className="bg-slate-50/70 hover:bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <h4 className="font-black text-slate-900 text-sm leading-snug">{prod.name}</h4>
+                                    <span className="text-[10px] font-bold text-slate-400">Stock: {prod.stockQuantity} {prod.unit || 'pcs'}</span>
+                                  </div>
+
+                                  {recipes.length > 0 ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                      Recipe Mapped
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                      Custom Only
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="pt-3 border-t border-slate-200/60 mt-3 flex items-center justify-between">
+                                <span className="text-xs font-black text-slate-700 font-mono">₹{prod.sellingPrice?.toFixed(2)}</span>
+                                <button 
+                                  onClick={() => handleOpenProductionModal(prod)}
+                                  className="bg-slate-900 hover:bg-black text-white px-3 py-1.5 rounded-xl font-black text-[11px] uppercase tracking-wider shadow flex items-center gap-1 transition-transform active:scale-95"
+                                >
+                                  <Plus size={14} /> Produce
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -866,14 +955,25 @@ const StockEntry = () => {
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                 <div>
-                  <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                    <ChefHat className="text-brand-primary" size={22} />
-                    Finished Products Production Catalog
+                  <h2 className="text-sm md:text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                    <ChefHat className="text-indigo-600" size={20} />
+                    FINISHED PRODUCTS PRODUCTION
                   </h2>
-                  <p className="text-xs font-bold text-slate-400">Convert raw materials into finished products via Recipe Matrix or Custom Production.</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                    DISPLAYING FINISHED PRODUCTS WITH MAPPED RECIPES. CLICK (+) TO ADD TO PRODUCTION CART.
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleOpenCustomProduction}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-transform active:scale-95 shrink-0"
+                  >
+                    <Plus size={16} />
+                    <span>CUSTOM PRODUCTION</span>
+                  </button>
+
                   <div className="flex bg-slate-100 p-1 rounded-xl">
                     <button
                       onClick={() => setProdCatalogFilter('RECIPE_MAPPED')}
@@ -897,10 +997,10 @@ const StockEntry = () => {
                     <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input 
                       type="text"
-                      placeholder="Search production items..."
+                      placeholder="Search recipes..."
                       value={productionSearch}
                       onChange={(e) => setProductionSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:ring-2 focus:ring-brand-primary outline-none"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                 </div>
