@@ -5,15 +5,10 @@ import App from './App.jsx'
 import './index.css'
 
 import usePOSStore from './store/posStore';
+import { offlineDB } from './utils/offlineDB';
 
-// ONE-TIME SAFETY WIPE (Self-Cleaning for Data Reset)
-if (localStorage.getItem('pos_reset_state') !== '2026-06-12') {
-  console.log('New Deployment: Clearing local cache to sync with empty database...');
-  localStorage.clear();
-  sessionStorage.clear();
-  localStorage.setItem('pos_reset_state', '2026-06-12');
-  window.location.reload();
-}
+// Purge any old local offline DB on startup so all data is fetched live from Supabase
+offlineDB.purgeAll().catch(() => {});
 
 // Service Worker update check helper to force client PWA refresh
 if ('serviceWorker' in navigator) {

@@ -150,11 +150,11 @@ const Reports = () => {
         console.warn('Backend reporting unavailable, falling back to local data');
       }
 
-        // 2. Merge with Offline Orders if relevant (Only for reports that contain order lists)
+        // 2. Pure online reports (no offline order merging)
         const relevantReports = ['sales', 'credit-sales', 'daybook', 'transactions', 'cashflow'];
         if (relevantReports.includes(activeReport)) {
-          const offlineOrders = await offlineDB.getAll('orders');
-          const detailsList = data.details || data.transactions || [];
+          const offlineOrders: any[] = [];
+          const detailsList = data?.details || data?.transactions || [];
           
           if (Array.isArray(detailsList)) {
             // 2.a Deduplicate using BOTH id and serverId (client UUID) to prevent "POS-" duplicates

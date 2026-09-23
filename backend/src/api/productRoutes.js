@@ -6,20 +6,43 @@ const auth = require('../middleware/auth');
 // Get all products with search and category filter
 router.get('/', async (req, res) => {
   try {
-    const { search, categoryId, activeOnly } = req.query;
+    const { search, categoryId, activeOnly, lightweight } = req.query;
+    const where = {
+      AND: [
+        search ? {
+          OR: [
+            { name: { contains: search } },
+            { barcode: { contains: search } }
+          ]
+        } : {},
+        categoryId ? { categoryId } : {},
+        activeOnly === 'true' ? { is_active: true } : {}
+      ]
+    };
+
+    // Stock procurement only needs these fields; omitting base64 images keeps
+    // its production catalog response small and quick to load.
+    if (lightweight === 'true') {
+      const products = await prisma.product.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          unit: true,
+          stockQuantity: true,
+          sellingPrice: true,
+          recipe: true,
+          is_active: true,
+          availability: true,
+          categoryId: true
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+      return res.json(products);
+    }
+
     const products = await prisma.product.findMany({
-      where: {
-        AND: [
-          search ? {
-            OR: [
-              { name: { contains: search } },
-              { barcode: { contains: search } }
-            ]
-          } : {},
-          categoryId ? { categoryId } : {},
-          activeOnly === 'true' ? { is_active: true } : {}
-        ]
-      },
+      where,
       include: {
         category: true
       },

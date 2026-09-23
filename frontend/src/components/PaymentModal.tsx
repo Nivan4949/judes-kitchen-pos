@@ -6,7 +6,6 @@ import useRestaurantStore from '../store/restaurantStore';
 import CustomerSelectionModal from './CustomerSelectionModal';
 import RedeemPointsModal from './RedeemPointsModal';
 import useNetworkStatus from '../hooks/useNetworkStatus';
-import { processSyncQueue } from '../utils/syncQueue';
 
 interface PaymentModalProps {
   onPaymentComplete: (method: string, amount: string, orderType: string) => Promise<void>;

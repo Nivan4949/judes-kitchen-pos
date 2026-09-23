@@ -24,3 +24,4 @@ backend/backups/
 !*.json.example
 google-credentials.json
 *.sql
+!prisma/migrations/20260923223000_raw_material_archive/migration.sql

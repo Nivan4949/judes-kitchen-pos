@@ -41,6 +41,7 @@ const StockEntry = () => {
   const [supplierName, setSupplierName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [procurementNotice, setProcurementNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [billNo, setBillNo] = useState('');
   const [step, setStep] = useState<'main' | 'add-item' | 'finalize'>('main');
@@ -89,33 +90,20 @@ const StockEntry = () => {
   }, []);
 
   const fetchInitialData = async () => {
-    try {
-      // 1. Raw materials catalog
-      const rawRes = await api.get('/inventory/raw-materials');
-      setRawMaterials(rawRes.data);
+    const load = (url: string, update: (data: any) => void, label: string) => {
+      void api.get(url)
+        .then(response => update(response.data))
+        .catch(error => console.error(`Error fetching ${label}:`, error));
+    };
 
-      // 2. Suppliers list
-      const supRes = await api.get('/suppliers');
-      setSuppliers(supRes.data);
-
-      // 3. Purchase bill reference number
-      const countRes = await api.get('/purchases/count').catch(() => ({ data: { count: 0 } }));
-      setBillNo(`PUR-${1001 + (countRes.data.count || 0)}`);
-
-      // 4. Eligible finished products for production
-      fetchEligibleProducts();
-
-      // 5. All products for custom production lookup
-      const prodRes = await api.get('/products');
-      setAllProducts(prodRes.data);
-
-      // 6. Categories for product registration
-      const catRes = await api.get('/categories').catch(() => ({ data: [] }));
-      setCategories(catRes.data);
-
-    } catch (error) {
-      console.error('Error fetching initial stock procurement data:', error);
-    }
+    // Apply each response as soon as it arrives so a slow endpoint can't hold
+    // back categories or the finished-product form.
+    load('/inventory/raw-materials', setRawMaterials, 'raw materials');
+    load('/suppliers', setSuppliers, 'suppliers');
+    load('/inventory/purchases/next-invoice', data => setBillNo(data.invoiceNo), 'next procurement invoice number');
+    load('/products?lightweight=true&activeOnly=true', setAllProducts, 'production product catalog');
+    load('/categories', setCategories, 'product categories');
+    load('/inventory/recipe-matrix/eligible-products', setEligibleProducts, 'production eligible products');
   };
 
   const handleRegisterFinishedProduct = async () => {
@@ -140,9 +128,8 @@ const StockEntry = () => {
       setIsRegisterFinishedModalOpen(false);
       setNewFinishedProduct({ name: '', categoryId: '', unit: 'pcs', sellingPrice: '' });
 
-      // Refresh product list and auto-select for custom production
-      const prodRes = await api.get('/products');
-      setAllProducts(prodRes.data);
+      // Use the created product immediately; no need to download the catalog again.
+      setAllProducts(current => [res.data, ...current.filter(product => product.id !== res.data.id)]);
       setSelectedProdItem(res.data);
 
     } catch (err: any) {
@@ -160,6 +147,9 @@ const StockEntry = () => {
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+  const canSubmitProcurement = Boolean(
+    supplierName.trim() && cart.some(item => Number(item.quantity) > 0)
+  );
 
   // Auto-sync supplier ID when typing
   useEffect(() => {
@@ -251,18 +241,35 @@ const StockEntry = () => {
   };
 
   const handleCreateRawMaterial = async () => {
-    if (!newRawItem.name.trim()) return alert('Please enter Product Name');
+    const trimmed = newRawItem.name.trim();
+    if (!trimmed) return alert('Please enter Product Name');
     
+    // Check if product already exists in current loaded catalog
+    const existingLocal = rawMaterials.find(
+      r => r.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existingLocal) {
+      alert(`Product "${existingLocal.name}" already exists in the catalog and has been added to your draft!`);
+      setIsCreateModalOpen(false);
+      setNewRawItem({ name: '', category: '', unit: 'pcs', lowStockThreshold: '10' });
+      handleAddRawToCart(existingLocal);
+      return;
+    }
+
     try {
       const res = await api.post('/inventory/raw-materials', {
-        name: newRawItem.name.trim(),
+        name: trimmed,
         unit: newRawItem.unit,
         category: newRawItem.category.trim() || undefined,
         stockQuantity: 0,
         lowStockThreshold: parseFloat(newRawItem.lowStockThreshold) || 10
       });
 
-      alert(`Product "${res.data.name}" added to catalog & draft successfully!`);
+      if (res.data.alreadyExists) {
+        alert(`Product "${res.data.name}" already exists in the catalog and has been added to your draft!`);
+      } else {
+        alert(`Product "${res.data.name}" added to catalog & draft successfully!`);
+      }
       setIsCreateModalOpen(false);
       setNewRawItem({ name: '', category: '', unit: 'pcs', lowStockThreshold: '10' });
 
@@ -285,6 +292,7 @@ const StockEntry = () => {
     if (validItems.length === 0) return alert('Please enter quantity > 0 for drafted items');
 
     setLoading(true);
+    setProcurementNotice(null);
     try {
       const payloadItems = validItems.map(item => ({
         rawMaterialId: item.rawMaterialId,
@@ -301,18 +309,33 @@ const StockEntry = () => {
         items: payloadItems
       });
 
-      alert(`Stock procurement invoice ${billNo} registered successfully!`);
-      
       // Dispatch real-time refresh event
       window.dispatchEvent(new CustomEvent('inventory-updated'));
 
-      fetchInitialData();
       setCart([]);
       setSupplierName('');
       setSelectedSupplierId('');
+      setProcurementNotice({ type: 'success', text: `Invoice ${billNo} saved and stock updated.` });
+      void fetchInitialData();
 
     } catch (error: any) {
-      alert('Procurement Error: ' + (error.response?.data?.error || error.message));
+      if (error.response?.status === 409) {
+        try {
+          const invoiceRes = await api.get('/inventory/purchases/next-invoice');
+          setBillNo(invoiceRes.data.invoiceNo);
+          setProcurementNotice({
+            type: 'error',
+            text: `That invoice number is already in use. The reference is now ${invoiceRes.data.invoiceNo}; save again to retry.`
+          });
+          return;
+        } catch (refreshError: any) {
+          // Fall through and show the original conflict if the reference can't be refreshed.
+        }
+      }
+      setProcurementNotice({
+        type: 'error',
+        text: error.response?.data?.error || `Procurement failed: ${error.message}`
+      });
     } finally {
       setLoading(false);
     }
@@ -497,6 +520,27 @@ const StockEntry = () => {
   if (step === 'main') {
     return (
       <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans pb-32">
+        {procurementNotice && (
+          <div
+            role={procurementNotice.type === 'success' ? 'status' : 'alert'}
+            aria-live="polite"
+            className={`fixed top-20 right-4 z-[70] max-w-md rounded-2xl border px-4 py-3 shadow-xl flex items-start gap-3 ${
+              procurementNotice.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
+          >
+            <span className="flex-1 text-sm font-bold">{procurementNotice.text}</span>
+            <button
+              type="button"
+              aria-label="Dismiss procurement message"
+              onClick={() => setProcurementNotice(null)}
+              className="shrink-0 rounded-lg p-1 hover:bg-black/5"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {/* Header Bar */}
         <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-3.5 sticky top-0 z-40 shadow-sm flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-4">
@@ -1564,10 +1608,15 @@ const StockEntry = () => {
 
             <button
               type="button"
-              disabled={loading || cart.length === 0}
+              disabled={loading || !canSubmitProcurement}
+              title={!supplierName.trim()
+                ? 'Select a vendor before saving'
+                : !cart.some(item => Number(item.quantity) > 0)
+                  ? 'Add an item with a quantity greater than zero'
+                  : undefined}
               onClick={handleSubmitProcurement}
               className={`px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all active:scale-95 ${
-                cart.length > 0 && supplierName.trim()
+                canSubmitProcurement
                   ? 'bg-brand-primary hover:bg-brand-secondary text-white shadow-brand-primary/20'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}

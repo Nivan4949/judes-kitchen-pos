@@ -42,5 +42,19 @@ export const offlineDB = {
   async clear(storeName) {
     const db = await initDB();
     return db.clear(storeName);
+  },
+  async purgeAll() {
+    try {
+      const db = await initDB();
+      const stores = ['products', 'customers', 'orders', 'categories', 'syncQueue'];
+      for (const name of stores) {
+        if (db.objectStoreNames.contains(name)) {
+          await db.clear(name);
+        }
+      }
+      console.log('Local offline storage purged successfully.');
+    } catch (e) {
+      console.warn('Failed to purge offline storage:', e);
+    }
   }
 };

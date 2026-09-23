@@ -1,9 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 const usePOSStore = create(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       cart: [],
       customer: null,
       loyaltyDiscount: 0,
@@ -283,11 +281,7 @@ const usePOSStore = create(
         
         return { subtotal, taxTotal, parcelCharge, deliveryCharge, grandTotal, roundedTotal, loyaltyDiscount, manualDiscount, savings };
       },
-    }),
-    {
-      name: 'pos-cart-storage-restaurant',
-    }
-  )
+    })
 );
 
 export default usePOSStore;

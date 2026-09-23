@@ -35,9 +35,12 @@ router.post('/unlock/:productId', (req, res) => {
 // Get all raw materials
 router.get('/raw-materials', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   try {
-    const items = await prisma.rawMaterial.findMany({
-      orderBy: { name: 'asc' }
-    });
+    const items = await prisma.$queryRaw`
+      SELECT "id", "name", "unit", "stockQuantity", "lowStockThreshold", "createdAt", "updatedAt"
+      FROM "RawMaterial"
+      WHERE "is_active" = true
+      ORDER BY "name" ASC
+    `;
     res.json(items);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -51,10 +54,49 @@ router.post('/raw-materials', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     return res.status(400).json({ error: 'Name and unit are required' });
   }
 
+  const trimmedName = name.trim();
+
   try {
+    // Check if raw material already exists (case-insensitive)
+    const existing = await prisma.rawMaterial.findFirst({
+      where: {
+        name: {
+          equals: trimmedName,
+          mode: 'insensitive'
+        }
+      }
+    });
+
+    const existingStatus = existing
+      ? await prisma.$queryRaw`SELECT "is_active" FROM "RawMaterial" WHERE "id" = ${existing.id}`
+      : [];
+
+    if (existing && existingStatus[0]?.is_active) {
+      return res.json({
+        ...existing,
+        alreadyExists: true,
+        message: `Raw material "${existing.name}" already exists in the catalog.`
+      });
+    }
+
+    if (existing) {
+      await prisma.$executeRaw`
+        UPDATE "RawMaterial" SET "is_active" = true WHERE "id" = ${existing.id}
+      `;
+      const reactivated = await prisma.rawMaterial.update({
+        where: { id: existing.id },
+        data: {
+          unit,
+          stockQuantity: parseFloat(stockQuantity) || 0,
+          lowStockThreshold: parseFloat(lowStockThreshold) || 0
+        }
+      });
+      return res.json(reactivated);
+    }
+
     const item = await prisma.rawMaterial.create({
       data: {
-        name,
+        name: trimmedName,
         unit,
         stockQuantity: parseFloat(stockQuantity) || 0,
         lowStockThreshold: parseFloat(lowStockThreshold) || 0
@@ -62,6 +104,19 @@ router.post('/raw-materials', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     });
     res.json(item);
   } catch (error) {
+    if (error.code === 'P2002') {
+      const fallback = await prisma.rawMaterial.findFirst({
+        where: { name: { equals: trimmedName, mode: 'insensitive' } }
+      });
+      if (fallback) {
+        return res.json({
+          ...fallback,
+          alreadyExists: true,
+          message: `Raw material "${fallback.name}" already exists in the catalog.`
+        });
+      }
+      return res.status(409).json({ error: `A raw material named "${trimmedName}" already exists.` });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -91,12 +146,48 @@ router.put('/raw-materials/:id', auth(['ADMIN', 'MANAGER']), async (req, res) =>
 router.delete('/raw-materials/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   const { id } = req.params;
   try {
-    await prisma.rawMaterial.delete({
-      where: { id }
+    await prisma.$transaction(async (tx) => {
+      // Keep purchase and wastage history intact; remove active recipe links
+      // before archiving the ingredient so its foreign keys remain valid.
+      const recipeLinks = await tx.recipeMatrix.findMany({
+        where: { rawMaterialId: id },
+        select: { finishedProductId: true }
+      });
+      const legacyRecipeLinks = await tx.$queryRaw`
+        SELECT "id", "recipe" FROM "Product"
+        WHERE "recipe" @> ${JSON.stringify([{ rawMaterialId: id }])}::jsonb
+      `;
+      await tx.recipeMatrix.deleteMany({ where: { rawMaterialId: id } });
+
+      const affectedProductIds = new Set([
+        ...recipeLinks.map(({ finishedProductId }) => finishedProductId),
+        ...legacyRecipeLinks.map(({ id: productId }) => productId)
+      ]);
+      for (const finishedProductId of affectedProductIds) {
+        const product = await tx.product.findUnique({
+          where: { id: finishedProductId },
+          select: { recipe: true }
+        });
+        if (Array.isArray(product?.recipe)) {
+          await tx.product.update({
+            where: { id: finishedProductId },
+            data: {
+              recipe: product.recipe.filter((item) => item.rawMaterialId !== id)
+            }
+          });
+        }
+      }
+
+      const archived = await tx.$executeRaw`
+        UPDATE "RawMaterial" SET "is_active" = false WHERE "id" = ${id}
+      `;
+      if (archived === 0) {
+        throw Object.assign(new Error('Ingredient not found'), { status: 404 });
+      }
     });
-    res.json({ message: 'Raw material deleted successfully' });
+    res.json({ message: 'Ingredient removed from the active matrix' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -114,6 +205,22 @@ router.get('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
       }
     });
     res.json(purchases);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate the next reference from raw-material invoices (not finished-goods purchases).
+router.get('/purchases/next-invoice', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const [result] = await prisma.$queryRaw`
+      SELECT COALESCE(
+        MAX(NULLIF(SUBSTRING("invoiceNo" FROM '^PUR-([0-9]+)$'), '')::INTEGER),
+        1000
+      ) + 1 AS "nextNumber"
+      FROM "RawMaterialPurchase"
+    `;
+    res.json({ invoiceNo: `PUR-${Number(result.nextNumber)}` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -166,6 +273,9 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: `Invoice number "${invoiceNo}" is already in use. Refresh the invoice number and try again.` });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -620,5 +730,3 @@ router.post('/shop-close', auth(['ADMIN', 'MANAGER']), async (req, res) => {
 });
 
 module.exports = router;
-
-

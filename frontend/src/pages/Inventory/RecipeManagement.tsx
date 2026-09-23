@@ -91,10 +91,11 @@ const RecipeManagement = () => {
   };
 
   const deleteRawMaterial = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this raw material?')) return;
+    if (!confirm('Remove this ingredient from the active matrix? Its purchase and wastage history will be kept.')) return;
     try {
       await api.delete(`/inventory/raw-materials/${id}`);
-      fetchRawMaterials();
+      setRawMaterials(current => current.filter(raw => raw.id !== id));
+      await fetchProducts();
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to delete raw material');
     }

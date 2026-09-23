@@ -180,7 +180,9 @@ async function autoSeedDatabase() {
   }
 }
 
-autoSeedDatabase();
+if (process.env.SKIP_AUTO_SEED !== 'true') {
+  autoSeedDatabase();
+}
 
 // Middleware
 app.use(cors());

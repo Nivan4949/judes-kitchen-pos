@@ -9,8 +9,6 @@ import useRestaurantStore from '../../store/restaurantStore';
 import PaymentModal from '../../components/PaymentModal';
 import ReceiptPreview from '../../components/ReceiptPreview';
 import { Product, CartItem } from '../../types';
-import { offlineDB } from '../../utils/offlineDB';
-import { addToSyncQueue, processSyncQueue } from '../../utils/syncQueue';
 import useNetworkStatus from '../../hooks/useNetworkStatus';
 import { useBluetoothPrinter } from '../../hooks/useBluetoothPrinter';
 import { EscPosBuilder } from '../../utils/escPosUtil';
@@ -189,48 +187,22 @@ const POSInterface: React.FC = () => {
 
   const fetchCategories = async () => {
     try {
-      if (isOnline) {
-        const response = await api.get('/categories');
-        setCategories(response.data);
-        for (const cat of response.data) {
-          await offlineDB.put('categories', cat);
-        }
-      } else {
-        const offlineCats = await offlineDB.getAll('categories');
-        setCategories(offlineCats);
-      }
+      const response = await api.get('/categories');
+      setCategories(response.data || []);
     } catch (error) {
-      console.error('Error fetching categories:', error);
-      const offlineCats = await offlineDB.getAll('categories');
-      setCategories(offlineCats);
+      console.error('Error fetching categories from Supabase:', error);
     }
   };
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      let productList: Product[] = [];
-      if (isOnline) {
-        const response = await api.get('/products?activeOnly=true');
-        productList = response.data;
-        // Batch cache full list
-        const tx = (await offlineDB.initDB()).transaction('products', 'readwrite');
-        const store = tx.objectStore('products');
-        await store.clear();
-        for (const product of productList) {
-          await store.put(product);
-        }
-        await tx.done;
-      } else {
-        productList = await offlineDB.getAll('products');
-      }
+      const response = await api.get('/products?activeOnly=true');
+      const productList: Product[] = response.data || [];
       setAllProducts(productList);
       applyFilters(search, selectedCategoryId, productList);
     } catch (error) {
-      console.error('Error fetching products:', error);
-      const offlineProducts = await offlineDB.getAll('products');
-      setAllProducts(offlineProducts);
-      applyFilters(search, selectedCategoryId, offlineProducts);
+      console.error('Error fetching products from Supabase:', error);
     } finally {
       setLoading(false);
     }
@@ -473,84 +445,39 @@ const POSInterface: React.FC = () => {
       tableId: tableId || null,
       notes: notes || null,
       parcelCharge: parcelCharge,
-      deliveryCharge: deliveryCharge,
-      isSyncing: true // Visual flag for the receipt
+      deliveryCharge: deliveryCharge
     };
 
     try {
-      // Optimistic UI state
-      let finalOrderData = { ...orderData, isSyncing: true, isSynced: false };
+      setIsSyncing(true);
 
-      // 1. LOCAL PERSISTENCE & STOCK GUARD (Fast, <10ms latency)
-      try {
-        await offlineDB.put('orders', finalOrderData);
-        
-        // Update stock in-memory and in-database concurrently
-        const updatedAllProducts = [...allProducts];
-        const db = await offlineDB.initDB();
-        const tx = db.transaction('products', 'readwrite');
-        const store = tx.objectStore('products');
+      // Persist directly to Supabase via API
+      const response = activeOrderId
+        ? await api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
+        : await api.post('/orders', orderData, {
+            headers: { 'x-terminal-id': 'T1' }
+          });
 
-        for (const cartItem of cart) {
-          const idx = updatedAllProducts.findIndex(p => p.id === cartItem.id);
-          if (idx !== -1) {
-            const newStock = Math.max(0, updatedAllProducts[idx].stockQuantity - cartItem.quantity);
-            updatedAllProducts[idx] = {
-              ...updatedAllProducts[idx],
-              stockQuantity: newStock
-            };
-            store.put(updatedAllProducts[idx]); // Batch puts without awaiting each sequentially
-          }
-        }
-        await tx.done;
-        setAllProducts(updatedAllProducts);
-        applyFilters(search, selectedCategoryId, updatedAllProducts);
-      } catch (err) {
-        console.error('Local persistence failed:', err);
-      }
-      
-      // 2. INSTANT UI TRANSITION (0ms latency for cashier)
-      setRecentOrder(finalOrderData);
+      const confirmedOrder = response.data;
+      setRecentOrder(confirmedOrder);
       clearCart();
       setIsPaymentModalOpen(false);
       setIsPreviewOpen(true);
 
-      // 3. NON-BLOCKING BACKGROUND SERVER SYNC
-      if (isOnline) {
-        const syncPromise = activeOrderId
-          ? api.put(`/orders/${activeOrderId}`, { ...orderData, status: 'COMPLETED' })
-          : api.post('/orders', orderData, {
-              headers: { 'x-terminal-id': 'T1' },
-              skipAuthRedirect: true
-            } as any);
-
-        syncPromise
-          .then(async (response) => {
-            const syncedData = { ...orderData, ...response.data, isSyncing: false, isSynced: true };
-            await offlineDB.put('orders', syncedData).catch(() => {});
-            setRecentOrder((prev: any) => (prev?.id === syncedData.id ? syncedData : prev));
-            
-            // Silent WhatsApp dispatch after sync completion
-            if (syncedData.customer?.phone) {
-              api.post('/orders/share-whatsapp', { 
-                  orderId: syncedData.id || syncedData.invoiceNo, 
-                  phone: syncedData.customer.phone 
-              }, { skipAuthRedirect: true } as any).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
-            }
-            fetchTables(); // Refresh tables layout state
-          })
-          .catch(async (error) => {
-            console.error('Checkout Background Sync Failed, added to sync queue:', error);
-            await addToSyncQueue('CREATE_ORDER', orderData);
-          });
-      } else {
-        // Offline queueing
-        await addToSyncQueue('CREATE_ORDER', orderData);
+      // Silent WhatsApp dispatch after successful creation
+      if (confirmedOrder.customer?.phone) {
+        api.post('/orders/share-whatsapp', { 
+            orderId: confirmedOrder.id || confirmedOrder.invoiceNo, 
+            phone: confirmedOrder.customer.phone 
+        }).catch(err => console.error('Silent WhatsApp dispatch failed:', err));
       }
-      
+
+      // Refresh live tables and products directly from Supabase
+      fetchTables();
+      fetchProducts();
     } catch (error: any) {
-      console.error('Critical Layout Error:', error);
-      alert('A critical error occurred while attempting to process the order.');
+      console.error('Checkout error on Supabase:', error);
+      alert(error.response?.data?.error || error.message || 'Failed to complete order on database.');
     } finally {
       setIsSyncing(false);
     }

@@ -493,6 +493,7 @@ model RawMaterial {
   unit              String   // kg, gram, litre, ml, pcs
   stockQuantity     Float    @default(0)
   lowStockThreshold Float    @default(0)
+  is_active         Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   purchases         RawMaterialPurchaseItem[]
@@ -568,4 +569,3 @@ model ProductionBatchItem {
   rawMaterial      RawMaterial     @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
   quantityConsumed Float
 }
-
