@@ -34,7 +34,15 @@ router.get('/', async (req, res) => {
           recipe: true,
           is_active: true,
           availability: true,
-          categoryId: true
+          categoryId: true,
+          recipeMatrix: {
+            select: {
+              id: true,
+              rawMaterialId: true,
+              quantityRequired: true,
+              unit: true
+            }
+          }
         },
         orderBy: { updatedAt: 'desc' }
       });
@@ -44,7 +52,12 @@ router.get('/', async (req, res) => {
     const products = await prisma.product.findMany({
       where,
       include: {
-        category: true
+        category: true,
+        recipeMatrix: {
+          include: {
+            rawMaterial: true
+          }
+        }
       },
       orderBy: { updatedAt: 'desc' }
     });

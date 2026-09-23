@@ -38,7 +38,7 @@ router.get('/raw-materials', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     const items = await prisma.$queryRaw`
       SELECT "id", "name", "unit", "stockQuantity", "lowStockThreshold", "createdAt", "updatedAt"
       FROM "RawMaterial"
-      WHERE "is_active" = true
+      WHERE COALESCE("is_active", true) = true
       ORDER BY "name" ASC
     `;
     res.json(items);
@@ -147,42 +147,41 @@ router.delete('/raw-materials/:id', auth(['ADMIN', 'MANAGER']), async (req, res)
   const { id } = req.params;
   try {
     await prisma.$transaction(async (tx) => {
-      // Keep purchase and wastage history intact; remove active recipe links
-      // before archiving the ingredient so its foreign keys remain valid.
-      const recipeLinks = await tx.recipeMatrix.findMany({
-        where: { rawMaterialId: id },
-        select: { finishedProductId: true }
-      });
+      // 1. Remove active recipe matrix entries for this ingredient
+      await tx.recipeMatrix.deleteMany({ where: { rawMaterialId: id } });
+
+      // 2. Remove from legacy Product.recipe JSON for all products
       const legacyRecipeLinks = await tx.$queryRaw`
         SELECT "id", "recipe" FROM "Product"
         WHERE "recipe" @> ${JSON.stringify([{ rawMaterialId: id }])}::jsonb
       `;
-      await tx.recipeMatrix.deleteMany({ where: { rawMaterialId: id } });
-
-      const affectedProductIds = new Set([
-        ...recipeLinks.map(({ finishedProductId }) => finishedProductId),
-        ...legacyRecipeLinks.map(({ id: productId }) => productId)
-      ]);
-      for (const finishedProductId of affectedProductIds) {
-        const product = await tx.product.findUnique({
-          where: { id: finishedProductId },
-          select: { recipe: true }
-        });
-        if (Array.isArray(product?.recipe)) {
+      for (const prod of legacyRecipeLinks) {
+        if (Array.isArray(prod.recipe)) {
           await tx.product.update({
-            where: { id: finishedProductId },
+            where: { id: prod.id },
             data: {
-              recipe: product.recipe.filter((item) => item.rawMaterialId !== id)
+              recipe: prod.recipe.filter((item) => item.rawMaterialId !== id)
             }
           });
         }
       }
 
-      const archived = await tx.$executeRaw`
-        UPDATE "RawMaterial" SET "is_active" = false WHERE "id" = ${id}
-      `;
-      if (archived === 0) {
-        throw Object.assign(new Error('Ingredient not found'), { status: 404 });
+      // 3. Check if this ingredient has any transaction history (purchases, wastage, production)
+      const hasPurchases = await tx.rawMaterialPurchaseItem.findFirst({ where: { rawMaterialId: id }, select: { id: true } });
+      const hasWastage = await tx.wastageEntry.findFirst({ where: { rawMaterialId: id }, select: { id: true } });
+      const hasProduction = await tx.productionBatchItem.findFirst({ where: { rawMaterialId: id }, select: { id: true } });
+
+      if (!hasPurchases && !hasWastage && !hasProduction) {
+        // Completely safe to delete the record
+        await tx.rawMaterial.delete({ where: { id } });
+      } else {
+        // Soft delete / archive to keep historical purchase and wastage ledgers valid
+        const archived = await tx.$executeRaw`
+          UPDATE "RawMaterial" SET "is_active" = false WHERE "id" = ${id}
+        `;
+        if (archived === 0) {
+          throw Object.assign(new Error('Ingredient not found'), { status: 404 });
+        }
       }
     });
     res.json({ message: 'Ingredient removed from the active matrix' });
@@ -231,17 +230,45 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   const { invoiceNo, supplierName, totalAmount, items } = req.body;
   // items: Array of { rawMaterialId, rawMaterialName, quantity, price, total }
 
-  if (!invoiceNo || !items || items.length === 0) {
-    return res.status(400).json({ error: 'Invoice number and purchase items are required' });
+  if (!items || items.length === 0) {
+    return res.status(400).json({ error: 'Purchase items are required' });
   }
 
   try {
+    let finalInvoiceNo = (invoiceNo || '').trim();
+
+    // Check if the provided invoice number already exists
+    let invoiceExists = false;
+    if (finalInvoiceNo) {
+      const existing = await prisma.rawMaterialPurchase.findUnique({
+        where: { invoiceNo: finalInvoiceNo },
+        select: { id: true }
+      });
+      invoiceExists = !!existing;
+    }
+
+    // Auto-generate invoice number if missing or if a system PUR-xxxx invoice conflicted
+    if (!finalInvoiceNo || (invoiceExists && /^PUR-\d+$/i.test(finalInvoiceNo))) {
+      const [result] = await prisma.$queryRaw`
+        SELECT COALESCE(
+          MAX(NULLIF(SUBSTRING("invoiceNo" FROM '^PUR-([0-9]+)$'), '')::INTEGER),
+          1000
+        ) + 1 AS "nextNumber"
+        FROM "RawMaterialPurchase"
+      `;
+      finalInvoiceNo = `PUR-${Number(result.nextNumber)}`;
+    } else if (invoiceExists) {
+      return res.status(409).json({
+        error: `Invoice number "${finalInvoiceNo}" is already in use. Please enter a different invoice number.`
+      });
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create Purchase Entry
       const purchase = await tx.rawMaterialPurchase.create({
         data: {
-          invoiceNo,
-          supplierName,
+          invoiceNo: finalInvoiceNo,
+          supplierName: supplierName || 'General',
           totalAmount: parseFloat(totalAmount) || 0,
           items: {
             create: items.map(i => ({
@@ -274,7 +301,7 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     res.json(result);
   } catch (error) {
     if (error.code === 'P2002') {
-      return res.status(409).json({ error: `Invoice number "${invoiceNo}" is already in use. Refresh the invoice number and try again.` });
+      return res.status(409).json({ error: `Invoice number is already in use. Please refresh and try again.` });
     }
     res.status(500).json({ error: error.message });
   }
@@ -417,6 +444,52 @@ router.post('/recipe-matrix', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     });
 
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove single ingredient from a product recipe
+router.delete('/recipe-matrix/:productId/:rawMaterialId', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  const { productId, rawMaterialId } = req.params;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.recipeMatrix.deleteMany({
+        where: { finishedProductId: productId, rawMaterialId }
+      });
+      const prod = await tx.product.findUnique({
+        where: { id: productId },
+        select: { recipe: true }
+      });
+      if (Array.isArray(prod?.recipe)) {
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            recipe: prod.recipe.filter(r => r.rawMaterialId !== rawMaterialId)
+          }
+        });
+      }
+    });
+    res.json({ message: 'Ingredient removed from recipe successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear all ingredients from a product recipe
+router.delete('/recipe-matrix/:productId', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  const { productId } = req.params;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.recipeMatrix.deleteMany({
+        where: { finishedProductId: productId }
+      });
+      await tx.product.update({
+        where: { id: productId },
+        data: { recipe: [] }
+      });
+    });
+    res.json({ message: 'Recipe cleared successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

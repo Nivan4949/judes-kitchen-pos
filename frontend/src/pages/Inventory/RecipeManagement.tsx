@@ -33,9 +33,23 @@ const RecipeManagement = () => {
   useEffect(() => {
     fetchRawMaterials();
     fetchProducts();
-    if (activeTab === 'PROCURE') fetchProcureHistory();
+    if (activeTab === 'PROCURE') {
+      fetchProcureHistory();
+      fetchNextInvoice();
+    }
     if (activeTab === 'WASTAGE') fetchWastageHistory();
   }, [activeTab]);
+
+  const fetchNextInvoice = async () => {
+    try {
+      const res = await api.get('/inventory/purchases/next-invoice');
+      if (res.data?.invoiceNo) {
+        setProcureInvoice(res.data.invoiceNo);
+      }
+    } catch (err) {
+      console.error('Failed to fetch next invoice:', err);
+    }
+  };
 
   const fetchRawMaterials = async () => {
     try {
@@ -96,6 +110,7 @@ const RecipeManagement = () => {
       await api.delete(`/inventory/raw-materials/${id}`);
       setRawMaterials(current => current.filter(raw => raw.id !== id));
       await fetchProducts();
+      alert('Ingredient removed from the active matrix successfully!');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to delete raw material');
     }
@@ -125,20 +140,25 @@ const RecipeManagement = () => {
     const totalAmount = payloadItems.reduce((sum, item) => sum + item.total, 0);
 
     try {
-      await api.post('/inventory/purchases', {
+      const res = await api.post('/inventory/purchases', {
         invoiceNo: procureInvoice,
         supplierName: procureSupplier,
         totalAmount,
         items: payloadItems
       });
-      setProcureInvoice('');
       setProcureSupplier('');
       setProcureItems([{ rawMaterialId: '', quantity: 0, price: 0 }]);
       fetchRawMaterials();
       fetchProcureHistory();
-      alert('Procurement invoice logged successfully!');
+      await fetchNextInvoice();
+      alert(`Procurement invoice ${res.data?.invoiceNo || procureInvoice} logged successfully!`);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to log procurement');
+      if (err.response?.status === 409) {
+        await fetchNextInvoice();
+        alert(err.response?.data?.error || 'Invoice number already in use. A new invoice number has been loaded.');
+      } else {
+        alert(err.response?.data?.error || 'Failed to log procurement');
+      }
     }
   };
 
@@ -188,12 +208,26 @@ const RecipeManagement = () => {
     }
   }, [selectedProductId, products]);
 
+  const handleClearRecipe = async () => {
+    if (!selectedProductId) return;
+    if (!confirm('Are you sure you want to remove all ingredients from this product recipe?')) return;
+    try {
+      await api.delete(`/inventory/recipe-matrix/${selectedProductId}`);
+      setRecipeItems([{ rawMaterialId: '', quantity: 0 }]);
+      await fetchProducts();
+      alert('Recipe cleared successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Failed to clear recipe');
+    }
+  };
+
   const handleSaveRecipe = async () => {
     if (!selectedProductId) return;
     const validRecipe = recipeItems.filter(i => i.rawMaterialId && parseFloat(i.quantity) > 0);
     
     try {
-      await api.post('/inventory/recipe-matrix', {
+      const res = await api.post('/inventory/recipe-matrix', {
         finishedProductId: selectedProductId,
         items: validRecipe.map(i => {
           const rm = rawMaterials.find(r => r.id === i.rawMaterialId);
@@ -204,8 +238,14 @@ const RecipeManagement = () => {
           };
         })
       });
+      const saved = (res.data || []).map((rm: any) => ({
+        rawMaterialId: rm.rawMaterialId,
+        quantity: rm.quantityRequired,
+        unit: rm.unit
+      }));
+      setRecipeItems(saved.length > 0 ? saved : [{ rawMaterialId: '', quantity: 0 }]);
       await fetchProducts();
-      alert('Recipe Matrix mapped successfully!');
+      alert(validRecipe.length === 0 ? 'Recipe cleared successfully!' : 'Recipe Matrix saved successfully!');
     } catch (err: any) {
       console.error(err);
       alert(err.response?.data?.error || 'Failed to save recipe mapping');
@@ -526,7 +566,16 @@ const RecipeManagement = () => {
 
             {selectedProductId && (
               <div className="space-y-4 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-600 mb-2">Recipe Configuration</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-600">Recipe Configuration</h3>
+                  <button
+                    type="button"
+                    onClick={handleClearRecipe}
+                    className="text-red-500 hover:text-red-700 text-xs font-bold uppercase tracking-wider flex items-center gap-1 transition-colors"
+                  >
+                    <Trash2 size={13} /> Clear Recipe
+                  </button>
+                </div>
                 
                 <div className="space-y-3">
                   {recipeItems.map((item, idx) => (
@@ -558,8 +607,13 @@ const RecipeManagement = () => {
                         }}
                       />
                       <button 
-                        onClick={() => setRecipeItems(recipeItems.filter((_, i) => i !== idx))}
-                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg"
+                        type="button"
+                        title="Remove ingredient row"
+                        onClick={() => {
+                          const updated = recipeItems.filter((_, i) => i !== idx);
+                          setRecipeItems(updated.length > 0 ? updated : [{ rawMaterialId: '', quantity: 0 }]);
+                        }}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>
