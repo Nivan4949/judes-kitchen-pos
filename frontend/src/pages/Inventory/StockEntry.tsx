@@ -542,30 +542,30 @@ const StockEntry = () => {
           </div>
         )}
         {/* Header Bar */}
-        <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-3.5 sticky top-0 z-40 shadow-sm flex flex-wrap justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors">
-              <ArrowLeft size={20} />
+        <div className="bg-white border-b border-slate-200 px-3.5 sm:px-6 md:px-8 py-3 sticky top-0 z-30 shadow-xs flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap">
+            <button onClick={() => navigate(-1)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors">
+              <ArrowLeft size={18} />
             </button>
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">Stock Procurement</h1>
-              <span className="bg-pink-50 text-pink-600 border border-pink-200 text-[10px] font-black tracking-widest px-2.5 py-0.5 rounded-md uppercase">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Stock Procurement</h1>
+              <span className="bg-pink-50 text-pink-600 border border-pink-200 text-[9px] sm:text-[10px] font-black tracking-widest px-2 py-0.5 rounded-md uppercase">
                 REGISTER SUPPLIER DELIVERIES
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
             <button
               onClick={handleOpenShopCloseModal}
-              className="bg-red-600 hover:bg-red-700 text-white px-3.5 py-2 rounded-xl font-black text-xs uppercase tracking-wider shadow flex items-center gap-1.5 transition-all active:scale-95"
+              className="bg-red-600 hover:bg-red-700 text-white px-3 sm:px-3.5 py-2 rounded-xl font-black text-xs uppercase tracking-wider shadow flex items-center justify-center gap-1.5 transition-all active:scale-95 flex-1 sm:flex-initial"
             >
               <Flame size={14} />
               <span>SHOP CLOSE</span>
             </button>
 
-            <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
-              <Calendar size={14} className="text-pink-500" />
+            <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-100 px-2.5 sm:px-3 py-2 rounded-xl border border-slate-200 flex-1 sm:flex-initial justify-center">
+              <Calendar size={14} className="text-pink-500 shrink-0" />
               <input 
                 type="date" 
                 value={purchaseDate} 
@@ -795,68 +795,136 @@ const StockEntry = () => {
                       </div>
                     ) : (
                       <div className="space-y-3 pt-2">
-                        {/* Table Header Row */}
-                        <div className="grid grid-cols-12 gap-2 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                          <div className="col-span-4">PRODUCT NAME</div>
-                          <div className="col-span-3 text-center">QUANTITY</div>
-                          <div className="col-span-3 text-center">UNIT PRICE</div>
-                          <div className="col-span-2 text-right">TOTAL</div>
+                        {/* Table Header Row (Desktop/Tablet) */}
+                        <div className="hidden md:grid grid-cols-12 gap-3 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                          <div className="col-span-5">PRODUCT NAME</div>
+                          <div className="col-span-2 text-center">QUANTITY</div>
+                          <div className="col-span-2 text-center">UNIT PRICE</div>
+                          <div className="col-span-3 text-right">TOTAL</div>
                         </div>
 
                         {/* Cart Item Rows */}
-                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                           {cart.map((item, idx) => (
-                            <div key={idx} className="grid grid-cols-12 gap-2 items-center p-4 bg-slate-50/70 hover:bg-slate-100/70 rounded-2xl border border-slate-100 transition-colors">
-                              
-                              {/* PRODUCT NAME & CATEGORY TAG */}
-                              <div className="col-span-4 min-w-0">
-                                <span className="font-black text-slate-900 text-sm block truncate">{item.name}</span>
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mt-0.5">
-                                  {item.category || 'RAW MATERIALS'} ({(item.unit || 'kg').toUpperCase()})
-                                </span>
+                            <div key={idx}>
+                              {/* 1. MOBILE CARD VIEW (< md) */}
+                              <div className="md:hidden bg-slate-50/90 hover:bg-slate-100/90 rounded-2xl border border-slate-200/80 p-3.5 space-y-3 shadow-xs transition-all">
+                                {/* Top Line: Product Name, Unit badge & Delete Button */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <span className="font-black text-slate-900 text-sm block truncate">{item.name}</span>
+                                    <span className="text-[9px] font-black text-pink-600 uppercase tracking-widest block mt-0.5">
+                                      {item.category || 'RAW MATERIALS'} • {(item.unit || 'kg').toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCartItem(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors shrink-0"
+                                    title="Remove item"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+
+                                {/* Bottom Line: 3 Distinct Columns (Qty, Unit Price, Total) */}
+                                <div className="grid grid-cols-3 gap-2 items-center bg-white p-2.5 rounded-xl border border-slate-200/70">
+                                  {/* QTY */}
+                                  <div>
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                      QTY ({(item.unit || 'kg').toUpperCase()})
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.001"
+                                      min="0"
+                                      placeholder="0"
+                                      value={item.quantity === 0 ? '' : item.quantity}
+                                      onChange={(e) => handleUpdateCartItem(idx, 'quantity', e.target.value)}
+                                      className="w-full p-2 bg-slate-50 border border-slate-300 focus:bg-white focus:border-pink-500 rounded-lg font-black text-center text-slate-900 text-xs outline-none transition-all"
+                                    />
+                                  </div>
+
+                                  {/* RATE */}
+                                  <div>
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                      RATE (₹)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      placeholder="0"
+                                      value={item.price === 0 ? '' : item.price}
+                                      onChange={(e) => handleUpdateCartItem(idx, 'price', e.target.value)}
+                                      className="w-full p-2 bg-slate-50 border border-slate-300 focus:bg-white focus:border-pink-500 rounded-lg font-black text-center text-slate-900 text-xs outline-none transition-all"
+                                    />
+                                  </div>
+
+                                  {/* TOTAL */}
+                                  <div className="text-right">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                      TOTAL
+                                    </span>
+                                    <span className="font-black text-slate-900 font-mono text-xs sm:text-sm block truncate text-pink-600">
+                                      ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
 
-                              {/* QUANTITY INPUT */}
-                              <div className="col-span-3 flex justify-center">
-                                <input
-                                  type="number"
-                                  step="0.001"
-                                  min="0"
-                                  placeholder="Qty"
-                                  value={item.quantity === 0 ? '' : item.quantity}
-                                  onChange={(e) => handleUpdateCartItem(idx, 'quantity', e.target.value)}
-                                  className="w-20 p-2 bg-white border-2 border-slate-800 focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
-                                />
-                              </div>
+                              {/* 2. DESKTOP / TABLET ROW VIEW (>= md) */}
+                              <div className="hidden md:grid grid-cols-12 gap-3 items-center p-3.5 bg-slate-50/70 hover:bg-slate-100/70 rounded-2xl border border-slate-100 transition-colors">
+                                {/* PRODUCT NAME & CATEGORY */}
+                                <div className="col-span-5 min-w-0">
+                                  <span className="font-black text-slate-900 text-sm block truncate">{item.name}</span>
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mt-0.5">
+                                    {item.category || 'RAW MATERIALS'} ({(item.unit || 'kg').toUpperCase()})
+                                  </span>
+                                </div>
 
-                              {/* UNIT PRICE INPUT */}
-                              <div className="col-span-3 flex items-center justify-center gap-1">
-                                <span className="text-slate-400 text-xs font-bold">₹</span>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  placeholder="0"
-                                  value={item.price === 0 ? '' : item.price}
-                                  onChange={(e) => handleUpdateCartItem(idx, 'price', e.target.value)}
-                                  className="w-24 p-2 bg-slate-100/70 border border-slate-200 focus:bg-white focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
-                                />
-                              </div>
+                                {/* QUANTITY INPUT */}
+                                <div className="col-span-2 flex justify-center">
+                                  <input
+                                    type="number"
+                                    step="0.001"
+                                    min="0"
+                                    placeholder="Qty"
+                                    value={item.quantity === 0 ? '' : item.quantity}
+                                    onChange={(e) => handleUpdateCartItem(idx, 'quantity', e.target.value)}
+                                    className="w-full max-w-[90px] p-2 bg-white border-2 border-slate-800 focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
+                                  />
+                                </div>
 
-                              {/* TOTAL AMOUNT & DELETE BUTTON */}
-                              <div className="col-span-2 flex items-center justify-end gap-2">
-                                <span className="font-black text-slate-900 font-mono text-sm">
-                                  ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveCartItem(idx)}
-                                  className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded-lg"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
+                                {/* UNIT PRICE INPUT */}
+                                <div className="col-span-2 flex items-center justify-center gap-1">
+                                  <span className="text-slate-400 text-xs font-bold">₹</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="0"
+                                    value={item.price === 0 ? '' : item.price}
+                                    onChange={(e) => handleUpdateCartItem(idx, 'price', e.target.value)}
+                                    className="w-full max-w-[100px] p-2 bg-slate-100/70 border border-slate-200 focus:bg-white focus:border-pink-500 rounded-xl font-black text-center text-slate-900 text-sm outline-none transition-all"
+                                  />
+                                </div>
 
+                                {/* TOTAL AMOUNT & DELETE BUTTON */}
+                                <div className="col-span-3 flex items-center justify-end gap-2.5">
+                                  <span className="font-black text-slate-900 font-mono text-sm">
+                                    ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCartItem(idx)}
+                                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors rounded-lg"
+                                    title="Remove item"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -864,11 +932,13 @@ const StockEntry = () => {
                     )}
 
                     {/* Summary Footer inside Right Card */}
-                    <div className="pt-4 border-t border-slate-100 flex flex-col items-end gap-1">
-                      <span className="text-xs font-bold text-slate-400">Subtotal ({cart.length} lines) <span className="font-mono font-black text-slate-800 ml-4">₹{totalAmount.toFixed(2)}</span></span>
-                      <div className="flex items-baseline gap-4 mt-1">
-                        <span className="text-sm font-black text-slate-900 uppercase tracking-tight">Total Procurement Value</span>
-                        <span className="text-2xl md:text-3xl font-black text-pink-600 font-mono">₹{totalAmount.toFixed(2)}</span>
+                    <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2">
+                      <span className="text-xs font-bold text-slate-400">
+                        Subtotal ({cart.length} lines): <span className="font-mono font-black text-slate-800 ml-1">₹{totalAmount.toFixed(2)}</span>
+                      </span>
+                      <div className="flex items-baseline gap-2 sm:gap-4 self-end sm:self-auto">
+                        <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">Total Procurement Value:</span>
+                        <span className="text-xl sm:text-2xl md:text-3xl font-black text-pink-600 font-mono">₹{totalAmount.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
@@ -1596,13 +1666,13 @@ const StockEntry = () => {
 
         {/* STICKY BOTTOM ACTION BAR */}
         {activeTab === 'RAW_PROCUREMENT' && (
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 md:px-8 py-3 flex justify-between items-center z-40 shadow-2xl">
-            <div className="flex flex-col">
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                STAGED PROCUREMENT SUMMARY
+          <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3.5 sm:px-6 md:px-8 py-2.5 sm:py-3.5 flex justify-between items-center z-40 shadow-2xl">
+            <div className="flex flex-col min-w-0 pr-2">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-wider truncate">
+                STAGED PROCUREMENT
               </span>
-              <span className="text-xs font-bold text-slate-800">
-                <span className="font-black">{cart.length}</span> items staged / Total Value: <span className="font-black font-mono text-pink-600">₹{totalAmount.toFixed(2)}</span>
+              <span className="text-xs font-bold text-slate-800 truncate">
+                <span className="font-black">{cart.length}</span> items • <span className="font-black font-mono text-pink-600 text-xs sm:text-sm">₹{totalAmount.toFixed(2)}</span>
               </span>
             </div>
 
@@ -1615,14 +1685,14 @@ const StockEntry = () => {
                   ? 'Add an item with a quantity greater than zero'
                   : undefined}
               onClick={handleSubmitProcurement}
-              className={`px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all active:scale-95 ${
+              className={`px-4 sm:px-8 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all active:scale-95 shrink-0 ${
                 canSubmitProcurement
                   ? 'bg-brand-primary hover:bg-brand-secondary text-white shadow-brand-primary/20'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-              <span>SAVE PROCUREMENT</span>
+              <span className="whitespace-nowrap">SAVE PROCUREMENT</span>
             </button>
           </div>
         )}

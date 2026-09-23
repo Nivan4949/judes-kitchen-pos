@@ -39,13 +39,22 @@ function App() {
       {/* Sidebar - Only show if authenticated and NOT on login page */}
       {token && (
         <>
-          {/* Mobile Toggle */}
-          <button 
-            onClick={() => setSidebarOpen(true)}
-            className="md:hidden fixed top-3 left-3 z-40 bg-brand-primary text-white p-3.5 rounded-2xl shadow-xl shadow-brand-primary/20 active:scale-90 transition-transform"
-          >
-            <Menu size={20} />
-          </button>
+          {/* Mobile Top App Bar */}
+          <header className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/80 z-40 px-3 flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <button 
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open Navigation Menu"
+                className="bg-brand-primary text-white p-2.5 rounded-xl shadow-md shadow-brand-primary/20 active:scale-90 transition-transform"
+              >
+                <Menu size={18} />
+              </button>
+              <div className="flex flex-col">
+                <span className="font-black text-xs text-slate-900 tracking-tight leading-none">JUDE'S KITCHEN</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">POS & Inventory</span>
+              </div>
+            </div>
+          </header>
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         </>
       )}
