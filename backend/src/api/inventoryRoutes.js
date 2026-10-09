@@ -190,14 +190,88 @@ router.delete('/raw-materials/:id', auth(['ADMIN', 'MANAGER']), async (req, res)
   }
 });
 
-// --- PURCHASE LOGS ---
+// --- PURCHASE LOGS (Multi-Product Tax Invoice & Stock Movements) ---
 
-// Get purchase history
+function normalizeUnit(u) {
+  if (!u) return 'kg';
+  const s = u.toLowerCase().trim();
+  if (s === 'gram' || s === 'grams' || s === 'g') return 'g';
+  if (s === 'kilogram' || s === 'kilograms' || s === 'kg' || s === 'kgs') return 'kg';
+  if (s === 'litre' || s === 'litres' || s === 'liter' || s === 'liters' || s === 'ltr' || s === 'l') return 'ltr';
+  if (s === 'millilitre' || s === 'millilitres' || s === 'milliliter' || s === 'ml') return 'ml';
+  if (s === 'piece' || s === 'pieces' || s === 'pcs' || s === 'pc') return 'pcs';
+  return s;
+}
+
+function convertToStandardUnit(quantity, fromUnit, toUnit) {
+  const q = parseFloat(quantity) || 0;
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
+  if (!from || !to || from === to) return q;
+
+  // Weight
+  if (from === 'g' && to === 'kg') return q / 1000;
+  if (from === 'kg' && to === 'g') return q * 1000;
+
+  // Volume
+  if (from === 'ml' && to === 'ltr') return q / 1000;
+  if (from === 'ltr' && to === 'ml') return q * 1000;
+
+  return q;
+}
+
+// Get purchase history with search, supplier, status, and date filters
 router.get('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   try {
+    const { search, supplier, startDate, endDate, status } = req.query;
+    const where = {};
+
+    if (search) {
+      where.OR = [
+        { invoiceNo: { contains: search, mode: 'insensitive' } },
+        { supplierName: { contains: search, mode: 'insensitive' } },
+        { supplierGstin: { contains: search, mode: 'insensitive' } },
+        { items: { some: { rawMaterialName: { contains: search, mode: 'insensitive' } } } }
+      ];
+    }
+
+    if (supplier) {
+      where.OR = [
+        { supplierId: supplier },
+        { supplierName: { contains: supplier, mode: 'insensitive' } }
+      ];
+    }
+
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) {
+        where.date.gte = new Date(startDate);
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.date.lte = end;
+      }
+    }
+
     const purchases = await prisma.rawMaterialPurchase.findMany({
+      where,
       include: {
-        items: true
+        items: {
+          include: {
+            rawMaterial: {
+              select: { id: true, name: true, unit: true, stockQuantity: true }
+            }
+          }
+        },
+        supplier: true,
+        stockMovements: {
+          orderBy: { createdAt: 'asc' }
+        }
       },
       orderBy: {
         date: 'desc'
@@ -209,7 +283,7 @@ router.get('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   }
 });
 
-// Generate the next reference from raw-material invoices (not finished-goods purchases).
+// Generate next reference invoice number
 router.get('/purchases/next-invoice', auth(['ADMIN', 'MANAGER']), async (req, res) => {
   try {
     const [result] = await prisma.$queryRaw`
@@ -225,13 +299,79 @@ router.get('/purchases/next-invoice', auth(['ADMIN', 'MANAGER']), async (req, re
   }
 });
 
-// Log raw material purchase (increments stock)
-router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
-  const { invoiceNo, supplierName, totalAmount, items } = req.body;
-  // items: Array of { rawMaterialId, rawMaterialName, quantity, price, total }
+// Get single purchase details
+router.get('/purchases/:id', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const purchase = await prisma.rawMaterialPurchase.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            rawMaterial: {
+              select: { id: true, name: true, unit: true, stockQuantity: true }
+            }
+          }
+        },
+        supplier: true,
+        stockMovements: {
+          orderBy: { createdAt: 'asc' }
+        }
+      }
+    });
 
-  if (!items || items.length === 0) {
-    return res.status(400).json({ error: 'Purchase items are required' });
+    if (!purchase) {
+      return res.status(404).json({ error: 'Purchase record not found' });
+    }
+
+    res.json(purchase);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Log multi-product raw material purchase (increments stock with unit conversions & stock movements)
+router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  const { 
+    invoiceNo, 
+    supplierId,
+    supplierName, 
+    supplierGstin,
+    date,
+    subtotal,
+    taxTotal,
+    cgst,
+    sgst,
+    igst,
+    discount,
+    totalAmount,
+    paymentMode,
+    paymentStatus,
+    attachmentUrl,
+    attachmentName,
+    attachmentType,
+    notes,
+    items 
+  } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one purchase product is required' });
+  }
+
+  // Validate item entries
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const qty = parseFloat(item.quantity);
+    const price = parseFloat(item.price);
+    if (!item.rawMaterialId && !item.rawMaterialName?.trim()) {
+      return res.status(400).json({ error: `Product at row #${i + 1} requires an ingredient name` });
+    }
+    if (isNaN(qty) || qty <= 0) {
+      return res.status(400).json({ error: `Valid positive quantity required for product #${i + 1}` });
+    }
+    if (isNaN(price) || price < 0) {
+      return res.status(400).json({ error: `Valid rate per unit required for product #${i + 1}` });
+    }
   }
 
   try {
@@ -263,21 +403,131 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
       });
     }
 
+    const purchaseDate = date ? new Date(date) : new Date();
+
+    // Determine supplier linkage
+    let resolvedSupplierId = supplierId || null;
+    let resolvedSupplierName = (supplierName || '').trim();
+    let resolvedSupplierGst = (supplierGstin || '').trim();
+
+    if (resolvedSupplierId) {
+      const s = await prisma.supplier.findUnique({ where: { id: resolvedSupplierId } });
+      if (s) {
+        resolvedSupplierName = s.name;
+        if (!resolvedSupplierGst && s.gstNo) resolvedSupplierGst = s.gstNo;
+      }
+    } else if (resolvedSupplierName) {
+      const existingSupplier = await prisma.supplier.findFirst({
+        where: { name: { equals: resolvedSupplierName, mode: 'insensitive' } }
+      });
+      if (existingSupplier) {
+        resolvedSupplierId = existingSupplier.id;
+        if (!resolvedSupplierGst && existingSupplier.gstNo) resolvedSupplierGst = existingSupplier.gstNo;
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create Purchase Entry
+      // 1. Process items and resolve ingredients
+      const processedItems = [];
+      const stockUpdates = [];
+
+      for (const item of items) {
+        let rawMaterial = null;
+
+        if (item.rawMaterialId) {
+          rawMaterial = await tx.rawMaterial.findUnique({
+            where: { id: item.rawMaterialId }
+          });
+        }
+
+        if (!rawMaterial && item.rawMaterialName?.trim()) {
+          rawMaterial = await tx.rawMaterial.findFirst({
+            where: { name: { equals: item.rawMaterialName.trim(), mode: 'insensitive' } }
+          });
+        }
+
+        // Create new ingredient if not found
+        if (!rawMaterial && item.rawMaterialName?.trim()) {
+          const standardUnit = normalizeUnit(item.unit || 'kg');
+          rawMaterial = await tx.rawMaterial.create({
+            data: {
+              name: item.rawMaterialName.trim(),
+              unit: standardUnit,
+              stockQuantity: 0,
+              lowStockThreshold: 0
+            }
+          });
+        }
+
+        if (!rawMaterial) {
+          throw new Error(`Unable to resolve ingredient "${item.rawMaterialName || item.rawMaterialId}"`);
+        }
+
+        const purchaseUnit = normalizeUnit(item.unit || rawMaterial.unit);
+        const standardUnit = normalizeUnit(rawMaterial.unit);
+        const qty = parseFloat(item.quantity);
+        const price = parseFloat(item.price);
+        const standardQty = convertToStandardUnit(qty, purchaseUnit, standardUnit);
+
+        const itemSubtotal = parseFloat(item.subtotal) || (qty * price);
+        const itemTaxPercent = parseFloat(item.taxPercent) || 0;
+        const itemTaxAmount = parseFloat(item.taxAmount) || (itemSubtotal * itemTaxPercent / 100);
+        const itemTotal = parseFloat(item.total) || (itemSubtotal + itemTaxAmount);
+
+        const prevStock = rawMaterial.stockQuantity;
+        const nextStock = prevStock + standardQty;
+
+        processedItems.push({
+          rawMaterialId: rawMaterial.id,
+          rawMaterialName: rawMaterial.name,
+          quantity: qty,
+          unit: purchaseUnit,
+          price: price,
+          subtotal: itemSubtotal,
+          taxPercent: itemTaxPercent,
+          taxAmount: itemTaxAmount,
+          total: itemTotal,
+          standardQuantity: standardQty
+        });
+
+        stockUpdates.push({
+          rawMaterialId: rawMaterial.id,
+          standardQty,
+          previousStock: prevStock,
+          newStock: nextStock,
+          notes: `Procured ${qty} ${purchaseUnit} @ ₹${price}/${purchaseUnit} (${standardQty} ${standardUnit})`
+        });
+      }
+
+      // Calculate totals if not provided
+      const calcSubtotal = processedItems.reduce((acc, it) => acc + it.subtotal, 0);
+      const calcTaxTotal = processedItems.reduce((acc, it) => acc + it.taxAmount, 0);
+      const calcGrandTotal = calcSubtotal + calcTaxTotal - (parseFloat(discount) || 0);
+
+      // 2. Create Purchase Record
       const purchase = await tx.rawMaterialPurchase.create({
         data: {
           invoiceNo: finalInvoiceNo,
-          supplierName: supplierName || 'General',
-          totalAmount: parseFloat(totalAmount) || 0,
+          supplierId: resolvedSupplierId,
+          supplierName: resolvedSupplierName || 'General',
+          supplierGstin: resolvedSupplierGst || null,
+          date: purchaseDate,
+          subtotal: parseFloat(subtotal) || calcSubtotal,
+          taxTotal: parseFloat(taxTotal) || calcTaxTotal,
+          cgst: parseFloat(cgst) || (calcTaxTotal / 2),
+          sgst: parseFloat(sgst) || (calcTaxTotal / 2),
+          igst: parseFloat(igst) || 0,
+          discount: parseFloat(discount) || 0,
+          totalAmount: parseFloat(totalAmount) || calcGrandTotal,
+          paymentMode: paymentMode || 'CASH',
+          paymentStatus: paymentStatus || 'PAID',
+          status: 'COMPLETED',
+          attachmentUrl: attachmentUrl || null,
+          attachmentName: attachmentName || null,
+          attachmentType: attachmentType || null,
+          notes: notes || null,
           items: {
-            create: items.map(i => ({
-              rawMaterialId: i.rawMaterialId,
-              rawMaterialName: i.rawMaterialName,
-              quantity: parseFloat(i.quantity),
-              price: parseFloat(i.price),
-              total: parseFloat(i.total)
-            }))
+            create: processedItems
           }
         },
         include: {
@@ -285,12 +535,27 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
         }
       });
 
-      // 2. Update stock for each raw material
-      for (const item of items) {
+      // 3. Atomically update stock & log stock movements
+      for (const update of stockUpdates) {
         await tx.rawMaterial.update({
-          where: { id: item.rawMaterialId },
+          where: { id: update.rawMaterialId },
           data: {
-            stockQuantity: { increment: parseFloat(item.quantity) }
+            stockQuantity: { increment: update.standardQty }
+          }
+        });
+
+        await tx.stockMovement.create({
+          data: {
+            rawMaterialId: update.rawMaterialId,
+            purchaseId: purchase.id,
+            type: 'PURCHASE',
+            quantity: update.standardQty,
+            unit: update.notes.split('(')[1]?.replace(')', '') || 'kg',
+            previousStock: update.previousStock,
+            newStock: update.newStock,
+            reference: finalInvoiceNo,
+            notes: update.notes,
+            date: purchaseDate
           }
         });
       }
@@ -303,6 +568,74 @@ router.post('/purchases', auth(['ADMIN', 'MANAGER']), async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ error: `Invoice number is already in use. Please refresh and try again.` });
     }
+    console.error('Error recording purchase:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Safe cancellation / reversal of purchase
+router.post('/purchases/:id/cancel', auth(['ADMIN', 'MANAGER']), async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  try {
+    const purchase = await prisma.rawMaterialPurchase.findUnique({
+      where: { id },
+      include: { items: true }
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Purchase record not found' });
+    }
+
+    if (purchase.status === 'CANCELLED') {
+      return res.status(400).json({ error: 'Purchase is already cancelled' });
+    }
+
+    const cancelledPurchase = await prisma.$transaction(async (tx) => {
+      // 1. Mark status cancelled
+      const updated = await tx.rawMaterialPurchase.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          notes: (purchase.notes ? purchase.notes + ' | ' : '') + `Cancelled: ${reason || 'User cancelled'}`
+        }
+      });
+
+      // 2. Safely decrement stock and record reversal movements
+      for (const item of purchase.items) {
+        const qtyToRevert = item.standardQuantity || item.quantity;
+        const raw = await tx.rawMaterial.findUnique({ where: { id: item.rawMaterialId } });
+        if (raw) {
+          const prev = raw.stockQuantity;
+          const next = prev - qtyToRevert;
+          await tx.rawMaterial.update({
+            where: { id: item.rawMaterialId },
+            data: { stockQuantity: { decrement: qtyToRevert } }
+          });
+
+          await tx.stockMovement.create({
+            data: {
+              rawMaterialId: item.rawMaterialId,
+              purchaseId: purchase.id,
+              type: 'REVERSAL',
+              quantity: -qtyToRevert,
+              unit: raw.unit,
+              previousStock: prev,
+              newStock: next,
+              reference: purchase.invoiceNo,
+              notes: `Purchase cancellation reversal: ${reason || 'Manual reversal'}`,
+              date: new Date()
+            }
+          });
+        }
+      }
+
+      return updated;
+    });
+
+    res.json(cancelledPurchase);
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

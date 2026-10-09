@@ -1,5 +1,5 @@
 import React, { useState, useEffect, ChangeEvent, useRef } from 'react';
-import { Search, ShoppingCart, User, CreditCard, Trash2, Plus, Minus, Scan, Maximize, Minimize, Camera, Wifi, WifiOff, X, LayoutGrid, Printer, CheckCircle, Smartphone, Battery, ChevronRight, Clock, Star, Users, HandCoins, Bluetooth, BluetoothOff, RefreshCw } from 'lucide-react';
+import { Search, ShoppingCart, User, CreditCard, Trash2, Plus, Minus, Scan, Maximize, Minimize, Camera, Wifi, WifiOff, X, LayoutGrid, Printer, CheckCircle, Smartphone, Battery, ChevronRight, ChevronUp, ChevronDown, Clock, Star, Users, HandCoins, Bluetooth, BluetoothOff, RefreshCw } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { io } from 'socket.io-client';
 import api from '../../api/api';
@@ -58,24 +58,9 @@ const POSInterface: React.FC = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
-  const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-
-  const ALPHABET = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '#'];
-
-  const availableLetters = React.useMemo(() => {
-    const set = new Set<string>();
-    allProducts.forEach(p => {
-      const firstChar = p.name.trim().charAt(0).toUpperCase();
-      if (/[A-Z]/.test(firstChar)) {
-        set.add(firstChar);
-      } else {
-        set.add('#');
-      }
-    });
-    return set;
-  }, [allProducts]);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
 
   const groupedProducts = React.useMemo(() => {
     const groups: { [key: string]: Product[] } = {};
@@ -211,8 +196,7 @@ const POSInterface: React.FC = () => {
   const applyFilters = (
     query: string, 
     catId: string | null, 
-    list: Product[] = allProducts,
-    letterFilter: string | null = selectedLetter
+    list: Product[] = allProducts
   ) => {
     let filtered = [...list];
     
@@ -228,12 +212,6 @@ const POSInterface: React.FC = () => {
       filtered = filtered.filter(p => p.categoryId === catId);
     }
     
-    if (letterFilter && letterFilter !== 'ALL') {
-      filtered = filtered.filter(p => 
-        p.name.trim().toUpperCase().startsWith(letterFilter)
-      );
-    }
-
     // Always sort products alphabetically A-Z
     filtered.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
     
@@ -242,24 +220,13 @@ const POSInterface: React.FC = () => {
 
   const handleCategorySelect = (id: string | null) => {
     setSelectedCategoryId(id);
-    if (id !== null) {
-      setSelectedLetter(null);
-      applyFilters(search, id, allProducts, null);
-    } else {
-      applyFilters(search, id, allProducts, selectedLetter);
-    }
-  };
-
-  const handleLetterSelect = (char: string) => {
-    const newLetter = (char === 'ALL' || selectedLetter === char) ? null : char;
-    setSelectedLetter(newLetter);
-    applyFilters(search, selectedCategoryId, allProducts, newLetter);
+    applyFilters(search, id, allProducts);
   };
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearch(val);
-    applyFilters(val, selectedCategoryId, allProducts, selectedLetter);
+    applyFilters(val, selectedCategoryId, allProducts);
   };
 
 
@@ -837,7 +804,7 @@ const POSInterface: React.FC = () => {
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {/* Left Side - Product Selection */}
-        <section className="flex-1 lg:w-3/5 flex flex-col p-3 md:p-4 gap-3 md:gap-4 overflow-hidden border-b lg:border-r border-slate-200">
+        <section className="flex-1 flex flex-col p-3 md:p-4 gap-3 md:gap-4 overflow-hidden border-b lg:border-r border-slate-200">
           <div className="relative group flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-primary transition-colors" size={18} />
@@ -896,46 +863,7 @@ const POSInterface: React.FC = () => {
             ))}
           </div>
 
-          {/* Alphabet Search Bar (Visible when ALL ITEMS selected on desktop; hidden on mobile) */}
-          {selectedCategoryId === null && (
-            <div className="hidden sm:flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide select-none shrink-0 items-center bg-white/50 p-1.5 rounded-xl border border-slate-200/80">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 whitespace-nowrap hidden sm:inline">
-                A-Z Index:
-              </span>
-              {ALPHABET.map((char) => {
-                const isSelected = char === 'ALL' ? selectedLetter === null : selectedLetter === char;
-                const hasItems = char === 'ALL' || availableLetters.has(char);
-                return (
-                  <button
-                    key={char}
-                    onClick={() => handleLetterSelect(char)}
-                    disabled={!hasItems && char !== 'ALL'}
-                    className={`min-w-[2.2rem] h-8 px-2 rounded-lg font-bold text-xs uppercase transition-all flex items-center justify-center whitespace-nowrap border ${
-                      isSelected
-                        ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/30 border-brand-primary font-black scale-105'
-                        : hasItems
-                        ? 'bg-white text-slate-700 hover:bg-brand-50 border-slate-200 hover:border-brand-300 shadow-sm'
-                        : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed opacity-50'
-                    }`}
-                  >
-                    {char}
-                  </button>
-                );
-              })}
-              {selectedLetter && (
-                <button
-                  onClick={() => handleLetterSelect('ALL')}
-                  className="px-2.5 h-8 rounded-lg font-bold text-[10px] uppercase bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 whitespace-nowrap ml-1 flex items-center gap-1 shrink-0"
-                  title="Clear Letter Filter"
-                >
-                  <X size={12} /> Clear ({selectedLetter})
-                </button>
-              )}
-            </div>
-          )}
-
-
-          {/* Product Container with iOS-style Right Vertical Alphabet Index Bar */}
+          {/* Product Container */}
           <div className="flex-1 flex overflow-hidden relative">
             {/* Product List / Section Grid */}
             <div className="flex-1 overflow-y-auto pr-2 pb-24 lg:pb-0 custom-scrollbar space-y-4">
@@ -959,7 +887,7 @@ const POSInterface: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 px-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2 md:gap-3 px-1">
                       {groupedProducts[letterKey].map((product) => (
                         <ProductCard
                           key={product.id}
@@ -975,37 +903,6 @@ const POSInterface: React.FC = () => {
               )}
             </div>
 
-            {/* iOS Contacts-style Vertical Alphabet Index Bar */}
-            <div className="w-6 sm:w-7 bg-white/80 backdrop-blur-md border-l border-slate-200/80 flex flex-col items-center justify-between py-1 select-none shrink-0 z-20 rounded-r-xl text-[9px] sm:text-[10px] font-black shadow-sm">
-              {ALPHABET.map((char) => {
-                const isSelected = char === 'ALL' ? selectedLetter === null : selectedLetter === char;
-                const hasItems = char === 'ALL' || availableLetters.has(char);
-
-                return (
-                  <button
-                    key={char}
-                    onClick={() => {
-                      handleLetterSelect(char);
-                      if (char !== 'ALL') {
-                        const el = document.getElementById(`section-${char}`);
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }
-                    }}
-                    disabled={!hasItems && char !== 'ALL'}
-                    title={char === 'ALL' ? 'Show All Products' : `Filter / Jump to ${char}`}
-                    className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center leading-none transition-all ${
-                      isSelected
-                        ? 'bg-brand-primary text-white shadow-md font-black scale-110'
-                        : hasItems
-                        ? 'text-brand-primary hover:bg-brand-50 hover:scale-110 cursor-pointer font-bold'
-                        : 'text-slate-300 opacity-30 cursor-not-allowed font-normal'
-                    }`}
-                  >
-                    {char === 'ALL' ? '•' : char}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </section>
 
@@ -1022,8 +919,8 @@ const POSInterface: React.FC = () => {
           id="cart-section" 
           className={`
             fixed inset-x-0 bottom-0 z-40 bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.1)] transition-transform duration-300 transform rounded-t-[2rem] lg:rounded-none overflow-hidden flex flex-col
-            ${isMobileCartOpen ? 'translate-y-0 h-[85vh]' : 'translate-y-full h-[85vh]'}
-            lg:static lg:translate-y-0 lg:h-full lg:w-2/5 lg:shadow-xl lg:flex
+            ${isMobileCartOpen ? 'translate-y-0 h-[68vh]' : 'translate-y-full h-[68vh]'}
+            lg:static lg:translate-y-0 lg:h-full lg:w-[32%] xl:w-[30%] lg:min-w-[320px] lg:max-w-[400px] lg:shadow-xl lg:flex
           `}
         >
           {/* Cart Header */}
@@ -1112,11 +1009,11 @@ const POSInterface: React.FC = () => {
           )}
 
           {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
             {cart.length > 0 ? (
               <div className="divide-y divide-slate-50">
                 {cart.map((item: CartItem) => (
-                  <div key={item.cartLineId || item.id} className="p-3 md:p-4 hover:bg-slate-50/50 transition-colors flex items-center gap-3 md:gap-4 animate-in fade-in slide-in-from-right-4 group">
+                  <div key={item.cartLineId || item.id} className="p-2.5 md:p-3 hover:bg-slate-50/50 transition-colors flex items-center gap-2 md:gap-3 animate-in fade-in slide-in-from-right-4 group">
                     {/* Individual Delete Button on Left */}
                     <button 
                       onClick={() => handleRemoveFromCart(item)}
@@ -1204,79 +1101,182 @@ const POSInterface: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-10 text-slate-300 opacity-60">
-                 <ShoppingCart size={40} strokeWidth={1} className="mb-2" />
-                 <p className="text-sm font-medium">Cart is empty</p>
+              <div className="h-full flex flex-col items-center justify-center py-16 px-4 text-center text-slate-400">
+                 <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-300">
+                   <ShoppingCart size={32} strokeWidth={1.5} />
+                 </div>
+                 <p className="text-base font-bold text-slate-600">Cart is empty</p>
+                 <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Select items from the menu to build order</p>
               </div>
             )}
           </div>
 
-          {/* Bill Summary */}
-          <div className="p-4 md:p-6 bg-slate-900 text-white rounded-t-2xl md:rounded-t-3xl shadow-2xl shrink-0">
-            <div className="space-y-2 mb-4 md:mb-6">
-              <div className="flex justify-between text-xs md:text-sm text-slate-400">
-                <span>Total Items</span>
-                <span className="text-white font-bold">{cart.length}</span>
-              </div>
-              <div className="flex justify-between text-xs md:text-sm text-slate-400">
-                <span>Subtotal</span>
-                <span>₹{subtotal.toFixed(2)}</span>
-              </div>
-              {parcelCharge > 0 && (
-                <div className="flex justify-between text-xs md:text-sm text-slate-400">
-                  <span>Parcel Charge</span>
-                  <span>₹{parcelCharge.toFixed(2)}</span>
-                </div>
-              )}
-              {deliveryCharge > 0 && (
-                <div className="flex justify-between text-xs md:text-sm text-slate-400">
-                  <span>Delivery Charge</span>
-                  <span>₹{deliveryCharge.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-xs md:text-sm text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded-lg">
-                <span>Total Savings</span>
-                <span>₹{getTotals().savings.toFixed(2)}</span>
-              </div>
-              {loyaltyDiscount > 0 && (
-                <div className="flex justify-between text-xs md:text-sm text-green-400 font-medium">
-                  <span>Loyalty Discount ({appliedPoints} pts)</span>
-                  <span>- ₹{loyaltyDiscount.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="h-px bg-slate-800 my-2"></div>
-              <div className="flex justify-between items-end">
-                <span className="text-sm md:text-lg font-bold text-brand-300">Total</span>
-                <div className="text-right">
-                  <div className="text-2xl md:text-4xl font-black text-white tracking-tight">₹{grandTotal.toFixed(2)}</div>
-                  {customer && (
-                    <div className="text-[10px] text-brand-200 mt-1">Earn: +{Math.floor(grandTotal / 100)} pts</div>
+          {/* Bill Summary - Dropdown Model (Only pops up when order items are selected) */}
+          {cart.length > 0 && (
+            <div className="bg-slate-900 text-white rounded-t-2xl md:rounded-t-3xl shadow-2xl shrink-0 transition-all duration-300 border-t border-slate-800 animate-in slide-in-from-bottom duration-300">
+              {/* Dropdown Header / Toggle Bar */}
+              <button
+                type="button"
+                onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
+                className="w-full px-3.5 py-2.5 md:py-3 flex items-center justify-between text-left hover:bg-slate-800/60 transition-colors rounded-t-2xl md:rounded-t-3xl group cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 group-hover:text-white transition-colors">
+                    {isSummaryExpanded ? (
+                      <ChevronDown size={16} className="text-brand-400 transition-transform" />
+                    ) : (
+                      <ChevronUp size={16} className="text-brand-400 transition-transform" />
+                    )}
+                    <span>{isSummaryExpanded ? 'Hide Details' : 'Bill Details'}</span>
+                  </span>
+                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
+                    {cart.length} item{cart.length > 1 ? 's' : ''}
+                  </span>
+                  {getTotals().savings > 0 && (
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-black">
+                      Save ₹{getTotals().savings.toFixed(0)}
+                    </span>
                   )}
                 </div>
+
+                <div className="text-right flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-medium">Total:</span>
+                  <span className="text-lg md:text-xl font-black text-white tracking-tight">
+                    ₹{grandTotal.toFixed(2)}
+                  </span>
+                </div>
+              </button>
+
+              {/* Collapsible Dropdown Details */}
+              {isSummaryExpanded && (
+                <div className="px-3 md:px-4 pb-2.5 space-y-2 text-xs animate-in fade-in slide-in-from-bottom-2 duration-200 border-t border-slate-800/80 pt-2.5">
+                  {/* Items List Breakdown */}
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between pb-1 border-b border-slate-800">
+                      <span>Order Items ({cart.length})</span>
+                      <span>Amount</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto custom-scrollbar divide-y divide-slate-800/40 pr-1 space-y-0.5">
+                      {cart.map((item: CartItem) => {
+                        const itemPrice = item.sellingPrice + (item.modifiersPrice || 0);
+                        const lineTotal = itemPrice * item.quantity;
+                        return (
+                          <div key={item.cartLineId || item.id} className="py-1.5 flex items-start justify-between gap-2 group/item">
+                            <div className="flex items-start gap-2 min-w-0 flex-1">
+                              <span className="bg-slate-800 text-brand-300 font-bold px-1.5 py-0.5 rounded text-[10px] shrink-0 mt-0.5">
+                                {item.quantity}x
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-white font-medium truncate leading-tight">
+                                  {item.name}
+                                </div>
+                                {item.selectedVariant && (
+                                  <div className="text-[10px] text-orange-400 font-bold">
+                                    {item.selectedVariant.name}
+                                  </div>
+                                )}
+                                {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                                  <div className="text-[9px] text-slate-400 truncate">
+                                    +{item.selectedModifiers.map((m: any) => m.name).join(', ')}
+                                  </div>
+                                )}
+                                {item.notes && (
+                                  <div className="text-[9px] text-amber-300 italic truncate">
+                                    "{item.notes}"
+                                  </div>
+                                )}
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  ₹{itemPrice.toFixed(2)} each
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 flex items-center gap-1.5">
+                              <span className="font-bold text-slate-200">
+                                ₹{lineTotal.toFixed(2)}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFromCart(item);
+                                }}
+                                className="text-slate-500 hover:text-red-400 p-0.5 transition-colors opacity-0 group-hover/item:opacity-100"
+                                title="Remove item"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Pricing Breakdown */}
+                  <div className="border-t border-slate-800 pt-2 space-y-1.5">
+                    <div className="flex justify-between text-slate-400">
+                      <span>Total Items</span>
+                      <span className="text-white font-bold">{cart.length}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                      <span>Subtotal</span>
+                      <span>₹{subtotal.toFixed(2)}</span>
+                    </div>
+                    {parcelCharge > 0 && (
+                      <div className="flex justify-between text-slate-400">
+                        <span>Parcel Charge</span>
+                        <span>₹{parcelCharge.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {deliveryCharge > 0 && (
+                      <div className="flex justify-between text-slate-400">
+                        <span>Delivery Charge</span>
+                        <span>₹{deliveryCharge.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {getTotals().savings > 0 && (
+                      <div className="flex justify-between text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-lg">
+                        <span>Total Savings</span>
+                        <span>₹{getTotals().savings.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {loyaltyDiscount > 0 && (
+                      <div className="flex justify-between text-green-400 font-medium">
+                        <span>Loyalty Discount ({appliedPoints} pts)</span>
+                        <span>- ₹{loyaltyDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {customer && (
+                      <div className="text-[10px] text-brand-200 text-right pt-0.5">
+                        Earn: +{Math.floor(grandTotal / 100)} pts
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="p-2.5 md:p-3 pt-1 grid grid-cols-2 gap-2 border-t border-slate-800/60">
+                <button 
+                  onClick={handleSendKot}
+                  className="py-2 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow border border-slate-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  disabled={cart.length === 0 || loading}
+                >
+                  <Printer size={14} /> Send KOT
+                </button>
+                
+                <button 
+                  onClick={() => { 
+                    setIsMobileCartOpen(false); 
+                    setIsPaymentModalOpen(true);
+                  }}
+                  className="py-2 bg-brand-primary hover:bg-brand-secondary text-white font-black rounded-xl text-xs uppercase tracking-wider shadow shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  disabled={cart.length === 0}
+                >
+                  <CreditCard size={14} /> Settle Bill
+                </button>
               </div>
             </div>
-            
-            <div className="grid grid-cols-2 gap-2 md:gap-3">
-              <button 
-                onClick={handleSendKot}
-                className="py-3 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl md:rounded-2xl text-xs uppercase tracking-wider shadow border border-slate-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                disabled={cart.length === 0 || loading}
-              >
-                <Printer size={14} /> Send KOT
-              </button>
-              
-              <button 
-                onClick={() => { 
-                  setIsMobileCartOpen(false); 
-                  setIsPaymentModalOpen(true);
-                }}
-                className="py-3 bg-brand-primary hover:bg-brand-secondary text-white font-black rounded-xl md:rounded-2xl text-xs uppercase tracking-wider shadow shadow-brand-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                disabled={cart.length === 0}
-              >
-                <CreditCard size={14} /> Settle Bill
-              </button>
-            </div>
-          </div>
+          )}
         </section>
       </main>
 

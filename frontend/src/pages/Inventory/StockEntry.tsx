@@ -29,8 +29,13 @@ const StockEntry = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Active Tab: 'RAW_PROCUREMENT' vs 'FINISHED_PRODUCTION'
-  const [activeTab, setActiveTab] = useState<'RAW_PROCUREMENT' | 'FINISHED_PRODUCTION'>('RAW_PROCUREMENT');
+  // Active Tab: 'FINISHED_PRODUCTION' (first priority) vs 'RAW_PROCUREMENT'
+  const [activeTab, setActiveTab] = useState<'RAW_PROCUREMENT' | 'FINISHED_PRODUCTION'>(() => {
+    if ((location.state as any)?.mode === 'PO' || (location.state as any)?.po) {
+      return 'RAW_PROCUREMENT';
+    }
+    return (location.state as any)?.tab || 'FINISHED_PRODUCTION';
+  });
 
   // Core Raw Materials Data
   const [rawMaterials, setRawMaterials] = useState<any[]>([]);
@@ -550,7 +555,7 @@ const StockEntry = () => {
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Stock Procurement</h1>
               <span className="bg-pink-50 text-pink-600 border border-pink-200 text-[9px] sm:text-[10px] font-black tracking-widest px-2 py-0.5 rounded-md uppercase">
-                REGISTER SUPPLIER DELIVERIES
+                {activeTab === 'FINISHED_PRODUCTION' ? 'FINISHED PRODUCTS PRODUCTION' : 'REGISTER SUPPLIER DELIVERIES'}
               </span>
             </div>
           </div>
@@ -580,17 +585,6 @@ const StockEntry = () => {
         <div className="max-w-7xl mx-auto px-4 md:px-8 pt-6">
           <div className="flex gap-3 bg-slate-200/70 p-1 rounded-2xl max-w-md mb-6">
             <button
-              onClick={() => setActiveTab('RAW_PROCUREMENT')}
-              className={`flex-1 py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                activeTab === 'RAW_PROCUREMENT'
-                  ? 'bg-white text-slate-900 shadow-md'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Package size={16} />
-              <span>Stock Procurement</span>
-            </button>
-            <button
               onClick={() => setActiveTab('FINISHED_PRODUCTION')}
               className={`flex-1 py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'FINISHED_PRODUCTION'
@@ -600,6 +594,17 @@ const StockEntry = () => {
             >
               <ChefHat size={16} />
               <span>Finished Production</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('RAW_PROCUREMENT')}
+              className={`flex-1 py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                activeTab === 'RAW_PROCUREMENT'
+                  ? 'bg-white text-slate-900 shadow-md'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Package size={16} />
+              <span>Stock Procurement</span>
             </button>
           </div>
 
